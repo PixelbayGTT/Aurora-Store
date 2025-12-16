@@ -345,6 +345,19 @@ const SidebarItem = ({ icon, label, active, onClick }) => (
   </button>
 );
 
+// --- Componente Faltante: StatCard ---
+const StatCard = ({ title, value, icon, color, warning }) => (
+  <div className={`p-6 rounded-xl border ${warning ? 'border-orange-200 bg-orange-50' : 'border-slate-100 bg-white'} shadow-sm flex items-center gap-4`}>
+    <div className={`p-3 rounded-full ${color}`}>
+      {icon}
+    </div>
+    <div>
+      <p className="text-sm text-slate-500 font-medium">{title}</p>
+      <h3 className={`text-2xl font-bold ${warning ? 'text-orange-600' : 'text-slate-800'}`}>{value}</h3>
+    </div>
+  </div>
+);
+
 // --- VISTA 1: DASHBOARD / ANALYTICS (Actualizada con Migración) ---
 const DashboardView = ({ sales, products, onDeleteSale, onMigrate, migrating }) => {
   const [selectedSale, setSelectedSale] = useState(null);
