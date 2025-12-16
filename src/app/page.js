@@ -17,7 +17,9 @@ import {
   Loader,
   Eye,
   User,
-  FileText
+  FileText,
+  Database, // Icono para la migración
+  AlertTriangle
 } from 'lucide-react';
 
 // --- Firebase Imports ---
@@ -36,7 +38,9 @@ import {
   deleteDoc, 
   onSnapshot,
   writeBatch,
-  increment // Importante para restaurar stock
+  increment,
+  getDocs, // Necesario para leer la colección antigua
+  setDoc // Necesario para copiar con el mismo ID
 } from 'firebase/firestore';
 
 // --- Firebase Configuration & Initialization ---
@@ -70,6 +74,7 @@ export default function AuraApp() {
   // Estado local del Carrito
   const [cart, setCart] = useState([]);
   const [notification, setNotification] = useState(null);
+  const [migrating, setMigrating] = useState(false); // Estado para la migración
 
   // 1. Efecto de Autenticación
   useEffect(() => {
@@ -89,10 +94,10 @@ export default function AuraApp() {
     return () => unsubscribe();
   }, []);
 
-  // 2. Efecto de Datos (Productos)
+  // 2. Efecto de Datos (Productos - Ruta Pública)
   useEffect(() => {
     if (!user) return;
-    const productsRef = collection(db, 'artifacts', appId, 'users', user.uid, 'products');
+    const productsRef = collection(db, 'artifacts', appId, 'public', 'data', 'products');
     const unsubscribe = onSnapshot(productsRef, (snapshot) => {
       const prods = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       setProducts(prods);
@@ -105,10 +110,10 @@ export default function AuraApp() {
     return () => unsubscribe();
   }, [user]);
 
-  // 3. Efecto de Datos (Ventas)
+  // 3. Efecto de Datos (Ventas - Ruta Pública)
   useEffect(() => {
     if (!user) return;
-    const salesRef = collection(db, 'artifacts', appId, 'users', user.uid, 'sales');
+    const salesRef = collection(db, 'artifacts', appId, 'public', 'data', 'sales');
     const unsubscribe = onSnapshot(salesRef, (snapshot) => {
       const salesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
       salesData.sort((a, b) => new Date(b.date) - new Date(a.date)); 
@@ -124,12 +129,60 @@ export default function AuraApp() {
     setTimeout(() => setNotification(null), 3000);
   };
 
+  // --- Funciones de Migración (NUEVO) ---
+  const handleMigrateData = async () => {
+    if (!user) return;
+    if (!window.confirm("¿Estás seguro? Esto copiará los datos de tu usuario privado actual a la base de datos pública compartida.")) return;
+    
+    setMigrating(true);
+    try {
+      const batch = writeBatch(db);
+      let count = 0;
+
+      // 1. Leer Productos Viejos (Privados)
+      const oldProductsRef = collection(db, 'artifacts', appId, 'users', user.uid, 'products');
+      const oldProductsSnapshot = await getDocs(oldProductsRef);
+      
+      oldProductsSnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        // Escribir en ruta nueva (Pública) manteniendo el mismo ID para evitar duplicados si se corre 2 veces
+        const newDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'products', docSnap.id);
+        batch.set(newDocRef, data);
+        count++;
+      });
+
+      // 2. Leer Ventas Viejas (Privadas)
+      const oldSalesRef = collection(db, 'artifacts', appId, 'users', user.uid, 'sales');
+      const oldSalesSnapshot = await getDocs(oldSalesRef);
+      
+      oldSalesSnapshot.forEach((docSnap) => {
+        const data = docSnap.data();
+        const newDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'sales', docSnap.id);
+        batch.set(newDocRef, data);
+        count++;
+      });
+
+      if (count > 0) {
+        await batch.commit();
+        showNotification(`¡Éxito! Se transfirieron ${count} registros.`);
+      } else {
+        showNotification("No se encontraron datos privados para transferir.", "error");
+      }
+
+    } catch (error) {
+      console.error("Error migrating:", error);
+      showNotification("Error durante la migración.", "error");
+    } finally {
+      setMigrating(false);
+    }
+  };
+
   // --- Funciones de Base de Datos ---
 
   const handleAddProduct = async (productData) => {
     if (!user) return;
     try {
-      await addDoc(collection(db, 'artifacts', appId, 'users', user.uid, 'products'), productData);
+      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'products'), productData);
       showNotification("Producto guardado correctamente");
     } catch (error) {
       console.error("Error adding product:", error);
@@ -140,7 +193,7 @@ export default function AuraApp() {
   const handleUpdateProduct = async (id, productData) => {
     if (!user) return;
     try {
-      const docRef = doc(db, 'artifacts', appId, 'users', user.uid, 'products', id);
+      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'products', id);
       await updateDoc(docRef, productData);
       showNotification("Producto actualizado");
     } catch (error) {
@@ -152,34 +205,28 @@ export default function AuraApp() {
   const handleDeleteProduct = async (id) => {
     if (!user) return;
     try {
-      await deleteDoc(doc(db, 'artifacts', appId, 'users', user.uid, 'products', id));
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'products', id));
       showNotification("Producto eliminado");
     } catch (error) {
       console.error("Error deleting product:", error);
     }
   };
 
-  // Modificado: Acepta customerName
   const handleProcessSale = async (cartItems, total, totalProfit, customerName) => {
     if (!user) return;
-    
     try {
       const batch = writeBatch(db);
-
-      // 1. Crear registro de venta con nombre de cliente
-      const saleRef = doc(collection(db, 'artifacts', appId, 'users', user.uid, 'sales'));
+      const saleRef = doc(collection(db, 'artifacts', appId, 'public', 'data', 'sales'));
       batch.set(saleRef, {
         date: new Date().toISOString(),
         items: cartItems,
         total: total,
         totalProfit: totalProfit,
-        customerName: customerName || "Cliente Casual" // Valor por defecto
+        customerName: customerName || "Cliente Casual"
       });
 
-      // 2. Actualizar stock de cada producto (Resta)
       cartItems.forEach(item => {
-        const productRef = doc(db, 'artifacts', appId, 'users', user.uid, 'products', item.id);
-        // Usamos increment para restar de forma atómica y segura
+        const productRef = doc(db, 'artifacts', appId, 'public', 'data', 'products', item.id);
         batch.update(productRef, { stock: increment(-item.quantity) });
       });
 
@@ -192,31 +239,22 @@ export default function AuraApp() {
     }
   };
 
-  // Nueva función: Eliminar Venta y Restaurar Stock
   const handleDeleteSale = async (sale) => {
     if (!user) return;
-    // Confirmación simple del navegador (se podría hacer un modal custom pero esto es efectivo)
     if (!window.confirm(`¿Estás seguro de eliminar la venta de ${sale.customerName}? El stock será devuelto al inventario.`)) return;
 
     try {
       const batch = writeBatch(db);
-
-      // 1. Restaurar stock (Suma)
       sale.items.forEach(item => {
-        const productRef = doc(db, 'artifacts', appId, 'users', user.uid, 'products', item.id);
-        // Sumamos la cantidad vendida de vuelta al stock
+        const productRef = doc(db, 'artifacts', appId, 'public', 'data', 'products', item.id);
         batch.update(productRef, { stock: increment(item.quantity) });
       });
-
-      // 2. Eliminar el documento de la venta
-      const saleRef = doc(db, 'artifacts', appId, 'users', user.uid, 'sales', sale.id);
+      const saleRef = doc(db, 'artifacts', appId, 'public', 'data', 'sales', sale.id);
       batch.delete(saleRef);
-
       await batch.commit();
       showNotification("Venta eliminada y stock restaurado correctamente.");
     } catch (error) {
       console.error("Error deleting sale:", error);
-      // Es posible que falle si el producto original fue borrado de la base de datos de productos
       showNotification("Error al eliminar (¿Quizás un producto ya no existe?)", "error");
     }
   };
@@ -233,25 +271,13 @@ export default function AuraApp() {
 
     switch (activeTab) {
       case 'dashboard':
-        return <DashboardView sales={sales} products={products} onDeleteSale={handleDeleteSale} />;
+        return <DashboardView sales={sales} products={products} onDeleteSale={handleDeleteSale} onMigrate={handleMigrateData} migrating={migrating} />;
       case 'inventory':
-        return <InventoryView 
-          products={products} 
-          onAdd={handleAddProduct} 
-          onUpdate={handleUpdateProduct} 
-          onDelete={handleDeleteProduct} 
-          showNotification={showNotification} 
-        />;
+        return <InventoryView products={products} onAdd={handleAddProduct} onUpdate={handleUpdateProduct} onDelete={handleDeleteProduct} showNotification={showNotification} />;
       case 'pos':
-        return <POSView 
-          products={products} 
-          cart={cart} 
-          setCart={setCart} 
-          onCheckout={handleProcessSale}
-          showNotification={showNotification} 
-        />;
+        return <POSView products={products} cart={cart} setCart={setCart} onCheckout={handleProcessSale} showNotification={showNotification} />;
       default:
-        return <DashboardView sales={sales} products={products} onDeleteSale={handleDeleteSale} />;
+        return <DashboardView sales={sales} products={products} onDeleteSale={handleDeleteSale} onMigrate={handleMigrateData} migrating={migrating} />;
     }
   };
 
@@ -319,8 +345,8 @@ const SidebarItem = ({ icon, label, active, onClick }) => (
   </button>
 );
 
-// --- VISTA 1: DASHBOARD / ANALYTICS (Actualizada) ---
-const DashboardView = ({ sales, products, onDeleteSale }) => {
+// --- VISTA 1: DASHBOARD / ANALYTICS (Actualizada con Migración) ---
+const DashboardView = ({ sales, products, onDeleteSale, onMigrate, migrating }) => {
   const [selectedSale, setSelectedSale] = useState(null);
 
   const totalSales = sales.reduce((acc, sale) => acc + sale.total, 0);
@@ -337,6 +363,7 @@ const DashboardView = ({ sales, products, onDeleteSale }) => {
         <StatCard title="Stock Bajo" value={lowStockCount} icon={<Package className="text-orange-500" />} color="bg-orange-50" warning={lowStockCount > 0} />
       </div>
 
+      {/* HISTORIAL DE VENTAS */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
         <div className="p-6 border-b border-slate-50">
           <h3 className="font-semibold text-lg text-slate-700">Historial de Ventas</h3>
@@ -393,6 +420,31 @@ const DashboardView = ({ sales, products, onDeleteSale }) => {
             </tbody>
           </table>
         </div>
+      </div>
+
+      {/* HERRAMIENTA DE MIGRACIÓN */}
+      <div className="mt-8 border-t border-slate-200 pt-8">
+         <div className="bg-slate-50 p-6 rounded-xl border border-slate-200">
+            <h4 className="font-bold text-slate-700 flex items-center gap-2 mb-2">
+               <Database size={20} className="text-slate-500"/>
+               Zona Administrativa (Migración)
+            </h4>
+            <p className="text-sm text-slate-500 mb-4">
+              Usa esta opción <b>SOLO UNA VEZ</b> para transferir los datos que ingresaste anteriormente (cuando el sistema era privado) al nuevo sistema compartido visible en todos los dispositivos.
+            </p>
+            <button 
+              onClick={onMigrate}
+              disabled={migrating}
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors text-sm ${
+                migrating 
+                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed' 
+                  : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 hover:border-slate-400'
+              }`}
+            >
+               {migrating ? <Loader size={16} className="animate-spin"/> : <AlertTriangle size={16} className="text-amber-500"/>}
+               {migrating ? 'Transfiriendo datos...' : 'Transferir Mis Datos Privados a Públicos'}
+            </button>
+         </div>
       </div>
 
       {/* MODAL DE DETALLES DE VENTA */}
@@ -463,17 +515,9 @@ const DashboardView = ({ sales, products, onDeleteSale }) => {
   );
 };
 
-const StatCard = ({ title, value, icon, color, warning }) => (
-  <div className={`p-6 rounded-xl border ${warning ? 'border-orange-200 bg-orange-50' : 'border-slate-100 bg-white'} shadow-sm flex items-center gap-4`}>
-    <div className={`p-3 rounded-full ${color}`}> {icon} </div>
-    <div>
-      <p className="text-sm text-slate-500 font-medium">{title}</p>
-      <h3 className={`text-2xl font-bold ${warning ? 'text-orange-600' : 'text-slate-800'}`}>{value}</h3>
-    </div>
-  </div>
-);
+// --- VISTAS 2 y 3: INVENTARIO y POS (Sin cambios, solo copiadas para integridad) ---
+// (Se mantienen idénticas para que el archivo sea funcional completo)
 
-// --- VISTA 2: INVENTARIO (Sin cambios mayores) ---
 const InventoryView = ({ products, onAdd, onUpdate, onDelete, showNotification }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -612,7 +656,6 @@ const InventoryView = ({ products, onAdd, onUpdate, onDelete, showNotification }
   );
 };
 
-// --- VISTA 3: PUNTO DE VENTA (POS - Actualizada) ---
 const POSView = ({ products, cart, setCart, onCheckout, showNotification }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [customerName, setCustomerName] = useState('');
@@ -647,7 +690,7 @@ const POSView = ({ products, cart, setCart, onCheckout, showNotification }) => {
 
   const handleCompleteSale = () => {
     onCheckout(cart, cartTotal, cartProfit, customerName);
-    setCustomerName(''); // Limpiar nombre después de venta
+    setCustomerName(''); 
   };
 
   return (
@@ -702,7 +745,6 @@ const POSView = ({ products, cart, setCart, onCheckout, showNotification }) => {
           )}
         </div>
         <div className="p-6 bg-slate-50 border-t border-slate-100 rounded-b-xl space-y-4">
-          {/* Input para Nombre del Cliente */}
           <div className="mb-4">
              <label className="text-xs font-semibold text-slate-500 uppercase">Cliente</label>
              <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2 mt-1 focus-within:ring-2 focus-within:ring-pink-200">
