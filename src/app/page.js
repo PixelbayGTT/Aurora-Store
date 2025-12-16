@@ -18,8 +18,8 @@ import {
   Eye,
   User,
   FileText,
-  Database, // Icono para la migración
-  AlertTriangle
+  Menu,
+  ChevronLeft
 } from 'lucide-react';
 
 // --- Firebase Imports ---
@@ -38,9 +38,7 @@ import {
   deleteDoc, 
   onSnapshot,
   writeBatch,
-  increment,
-  getDocs, // Necesario para leer la colección antigua
-  setDoc // Necesario para copiar con el mismo ID
+  increment
 } from 'firebase/firestore';
 
 // --- Firebase Configuration & Initialization ---
@@ -74,7 +72,6 @@ export default function AuraApp() {
   // Estado local del Carrito
   const [cart, setCart] = useState([]);
   const [notification, setNotification] = useState(null);
-  const [migrating, setMigrating] = useState(false); // Estado para la migración
 
   // 1. Efecto de Autenticación
   useEffect(() => {
@@ -127,54 +124,6 @@ export default function AuraApp() {
   const showNotification = (message, type = 'success') => {
     setNotification({ message, type });
     setTimeout(() => setNotification(null), 3000);
-  };
-
-  // --- Funciones de Migración (NUEVO) ---
-  const handleMigrateData = async () => {
-    if (!user) return;
-    if (!window.confirm("¿Estás seguro? Esto copiará los datos de tu usuario privado actual a la base de datos pública compartida.")) return;
-    
-    setMigrating(true);
-    try {
-      const batch = writeBatch(db);
-      let count = 0;
-
-      // 1. Leer Productos Viejos (Privados)
-      const oldProductsRef = collection(db, 'artifacts', appId, 'users', user.uid, 'products');
-      const oldProductsSnapshot = await getDocs(oldProductsRef);
-      
-      oldProductsSnapshot.forEach((docSnap) => {
-        const data = docSnap.data();
-        // Escribir en ruta nueva (Pública) manteniendo el mismo ID para evitar duplicados si se corre 2 veces
-        const newDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'products', docSnap.id);
-        batch.set(newDocRef, data);
-        count++;
-      });
-
-      // 2. Leer Ventas Viejas (Privadas)
-      const oldSalesRef = collection(db, 'artifacts', appId, 'users', user.uid, 'sales');
-      const oldSalesSnapshot = await getDocs(oldSalesRef);
-      
-      oldSalesSnapshot.forEach((docSnap) => {
-        const data = docSnap.data();
-        const newDocRef = doc(db, 'artifacts', appId, 'public', 'data', 'sales', docSnap.id);
-        batch.set(newDocRef, data);
-        count++;
-      });
-
-      if (count > 0) {
-        await batch.commit();
-        showNotification(`¡Éxito! Se transfirieron ${count} registros.`);
-      } else {
-        showNotification("No se encontraron datos privados para transferir.", "error");
-      }
-
-    } catch (error) {
-      console.error("Error migrating:", error);
-      showNotification("Error durante la migración.", "error");
-    } finally {
-      setMigrating(false);
-    }
   };
 
   // --- Funciones de Base de Datos ---
@@ -262,7 +211,7 @@ export default function AuraApp() {
   const renderContent = () => {
     if (loading) {
       return (
-        <div className="flex flex-col items-center justify-center h-96 text-pink-400">
+        <div className="flex flex-col items-center justify-center h-screen text-pink-400">
           <Loader className="animate-spin mb-4" size={40} />
           <p>Cargando Aura...</p>
         </div>
@@ -271,19 +220,20 @@ export default function AuraApp() {
 
     switch (activeTab) {
       case 'dashboard':
-        return <DashboardView sales={sales} products={products} onDeleteSale={handleDeleteSale} onMigrate={handleMigrateData} migrating={migrating} />;
+        return <DashboardView sales={sales} products={products} onDeleteSale={handleDeleteSale} />;
       case 'inventory':
         return <InventoryView products={products} onAdd={handleAddProduct} onUpdate={handleUpdateProduct} onDelete={handleDeleteProduct} showNotification={showNotification} />;
       case 'pos':
         return <POSView products={products} cart={cart} setCart={setCart} onCheckout={handleProcessSale} showNotification={showNotification} />;
       default:
-        return <DashboardView sales={sales} products={products} onDeleteSale={handleDeleteSale} onMigrate={handleMigrateData} migrating={migrating} />;
+        return <DashboardView sales={sales} products={products} onDeleteSale={handleDeleteSale} />;
     }
   };
 
   return (
-    <div className="flex h-screen bg-gray-50 font-sans text-slate-800">
-      <aside className="w-64 bg-white border-r border-pink-100 flex flex-col shadow-sm">
+    <div className="flex h-screen bg-gray-50 font-sans text-slate-800 overflow-hidden">
+      {/* Sidebar (Desktop) */}
+      <aside className="hidden md:flex w-64 bg-white border-r border-pink-100 flex-col shadow-sm">
         <div className="p-6 flex items-center justify-center border-b border-pink-50">
           <div className="flex items-center gap-2">
             <div className="bg-pink-500 text-white p-2 rounded-lg">
@@ -306,22 +256,32 @@ export default function AuraApp() {
         </div>
       </aside>
 
-      <main className="flex-1 overflow-y-auto">
-        <header className="bg-white p-6 border-b border-pink-50 shadow-sm flex justify-between items-center sticky top-0 z-10">
-          <h2 className="text-xl font-semibold text-slate-700">
-            {activeTab === 'dashboard' && 'Resumen del Negocio'}
-            {activeTab === 'inventory' && 'Gestión de Productos'}
-            {activeTab === 'pos' && 'Nueva Venta'}
-          </h2>
-          <div className="flex items-center gap-4">
-             <span className="text-sm font-medium text-slate-500">{user ? 'Conectado' : 'Conectando...'}</span>
+      {/* Main Content */}
+      <main className="flex-1 flex flex-col h-full overflow-hidden">
+        {/* Header Responsive */}
+        <header className="bg-white p-4 md:p-6 border-b border-pink-50 shadow-sm flex justify-between items-center z-10 shrink-0">
+          <div className="flex items-center gap-3">
+             {/* Logo solo en móvil */}
+             <div className="md:hidden bg-pink-500 text-white p-1.5 rounded-lg">
+                <ShoppingBag size={20} />
+             </div>
+             <h2 className="text-lg md:text-xl font-semibold text-slate-700 truncate">
+              {activeTab === 'dashboard' && 'Resumen'}
+              {activeTab === 'inventory' && 'Inventario'}
+              {activeTab === 'pos' && 'Caja'}
+            </h2>
+          </div>
+          
+          <div className="flex items-center gap-3">
+             <span className="hidden md:inline text-sm font-medium text-slate-500">{user ? 'Conectado' : '...'}</span>
              <div className="h-8 w-8 rounded-full bg-pink-100 border border-pink-200 flex items-center justify-center text-pink-400">
                 <span className="text-xs font-bold">A</span>
              </div>
           </div>
         </header>
 
-        <div className="p-8">
+        {/* Content Scrollable */}
+        <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8">
           {notification && (
             <div className={`fixed top-4 right-4 px-6 py-3 rounded-lg shadow-lg z-50 animate-bounce text-white ${notification.type === 'error' ? 'bg-red-500' : 'bg-emerald-500'}`}>
               {notification.message}
@@ -330,6 +290,13 @@ export default function AuraApp() {
           {renderContent()}
         </div>
       </main>
+
+      {/* Mobile Bottom Navigation */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around p-2 pb-safe z-40 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
+        <MobileNavItem icon={<LayoutDashboard size={24} />} label="Panel" active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
+        <MobileNavItem icon={<ShoppingCart size={24} />} label="Vender" active={activeTab === 'pos'} onClick={() => setActiveTab('pos')} />
+        <MobileNavItem icon={<Package size={24} />} label="Items" active={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} />
+      </nav>
     </div>
   );
 }
@@ -345,7 +312,18 @@ const SidebarItem = ({ icon, label, active, onClick }) => (
   </button>
 );
 
-// --- Componente Faltante: StatCard ---
+const MobileNavItem = ({ icon, label, active, onClick }) => (
+  <button 
+    onClick={onClick}
+    className={`flex flex-col items-center justify-center p-2 rounded-lg w-full transition-colors ${
+      active ? 'text-pink-600' : 'text-slate-400'
+    }`}
+  >
+    {icon}
+    <span className="text-[10px] font-medium mt-1">{label}</span>
+  </button>
+);
+
 const StatCard = ({ title, value, icon, color, warning }) => (
   <div className={`p-6 rounded-xl border ${warning ? 'border-orange-200 bg-orange-50' : 'border-slate-100 bg-white'} shadow-sm flex items-center gap-4`}>
     <div className={`p-3 rounded-full ${color}`}>
@@ -358,8 +336,8 @@ const StatCard = ({ title, value, icon, color, warning }) => (
   </div>
 );
 
-// --- VISTA 1: DASHBOARD / ANALYTICS (Actualizada con Migración) ---
-const DashboardView = ({ sales, products, onDeleteSale, onMigrate, migrating }) => {
+// --- VISTA 1: DASHBOARD ---
+const DashboardView = ({ sales, products, onDeleteSale }) => {
   const [selectedSale, setSelectedSale] = useState(null);
 
   const totalSales = sales.reduce((acc, sale) => acc + sale.total, 0);
@@ -369,20 +347,19 @@ const DashboardView = ({ sales, products, onDeleteSale, onMigrate, migrating }) 
 
   return (
     <div className="space-y-6">
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6">
         <StatCard title="Ventas Totales" value={`Q${totalSales.toFixed(2)}`} icon={<DollarSign className="text-pink-500" />} color="bg-pink-50" />
         <StatCard title="Ganancia Neta" value={`Q${totalProfit.toFixed(2)}`} icon={<TrendingUp className="text-emerald-500" />} color="bg-emerald-50" />
         <StatCard title="Valor Inventario" value={`Q${totalStockValue.toFixed(2)}`} icon={<Package className="text-purple-500" />} color="bg-purple-50" />
         <StatCard title="Stock Bajo" value={lowStockCount} icon={<Package className="text-orange-500" />} color="bg-orange-50" warning={lowStockCount > 0} />
       </div>
 
-      {/* HISTORIAL DE VENTAS */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-        <div className="p-6 border-b border-slate-50">
+        <div className="p-4 md:p-6 border-b border-slate-50">
           <h3 className="font-semibold text-lg text-slate-700">Historial de Ventas</h3>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-600">
+          <table className="w-full text-left text-sm text-slate-600 min-w-[600px]">
             <thead className="bg-slate-50 text-slate-500 uppercase font-medium text-xs">
               <tr>
                 <th className="px-6 py-4">Cliente</th>
@@ -411,20 +388,8 @@ const DashboardView = ({ sales, products, onDeleteSale, onMigrate, migrating }) 
                     <td className="px-6 py-4 text-emerald-600 font-medium">+Q{sale.totalProfit.toFixed(2)}</td>
                     <td className="px-6 py-4 text-center">
                       <div className="flex justify-center gap-2">
-                        <button 
-                          onClick={() => setSelectedSale(sale)}
-                          className="p-1.5 text-blue-600 hover:bg-blue-50 rounded flex items-center gap-1 text-xs font-medium"
-                          title="Ver Detalles"
-                        >
-                          <Eye size={16} /> Ver
-                        </button>
-                        <button 
-                          onClick={() => onDeleteSale(sale)}
-                          className="p-1.5 text-red-600 hover:bg-red-50 rounded flex items-center gap-1 text-xs font-medium"
-                          title="Eliminar y Restaurar Stock"
-                        >
-                          <Trash2 size={16} />
-                        </button>
+                        <button onClick={() => setSelectedSale(sale)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded flex items-center gap-1 text-xs font-medium"><Eye size={16} /> Ver</button>
+                        <button onClick={() => onDeleteSale(sale)} className="p-1.5 text-red-600 hover:bg-red-50 rounded flex items-center gap-1 text-xs font-medium"><Trash2 size={16} /></button>
                       </div>
                     </td>
                   </tr>
@@ -435,32 +400,6 @@ const DashboardView = ({ sales, products, onDeleteSale, onMigrate, migrating }) 
         </div>
       </div>
 
-      {/* HERRAMIENTA DE MIGRACIÓN */}
-      <div className="mt-8 border-t border-slate-200 pt-8">
-         <div className="bg-slate-50 p-6 rounded-xl border border-slate-200">
-            <h4 className="font-bold text-slate-700 flex items-center gap-2 mb-2">
-               <Database size={20} className="text-slate-500"/>
-               Zona Administrativa (Migración)
-            </h4>
-            <p className="text-sm text-slate-500 mb-4">
-              Usa esta opción <b>SOLO UNA VEZ</b> para transferir los datos que ingresaste anteriormente (cuando el sistema era privado) al nuevo sistema compartido visible en todos los dispositivos.
-            </p>
-            <button 
-              onClick={onMigrate}
-              disabled={migrating}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors text-sm ${
-                migrating 
-                  ? 'bg-slate-200 text-slate-400 cursor-not-allowed' 
-                  : 'bg-white border border-slate-300 text-slate-700 hover:bg-slate-100 hover:border-slate-400'
-              }`}
-            >
-               {migrating ? <Loader size={16} className="animate-spin"/> : <AlertTriangle size={16} className="text-amber-500"/>}
-               {migrating ? 'Transfiriendo datos...' : 'Transferir Mis Datos Privados a Públicos'}
-            </button>
-         </div>
-      </div>
-
-      {/* MODAL DE DETALLES DE VENTA */}
       {selectedSale && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg overflow-hidden animate-in fade-in zoom-in duration-200">
@@ -506,20 +445,13 @@ const DashboardView = ({ sales, products, onDeleteSale, onMigrate, migrating }) 
                   </tbody>
                 </table>
               </div>
-
               <div className="flex justify-between items-center pt-2">
                  <span className="text-slate-500 font-medium">Total Pagado</span>
                  <span className="text-2xl font-bold text-pink-600">Q{selectedSale.total.toFixed(2)}</span>
               </div>
             </div>
-
             <div className="p-4 bg-slate-50 border-t border-slate-100 text-right">
-              <button 
-                onClick={() => setSelectedSale(null)}
-                className="bg-slate-800 text-white px-6 py-2 rounded-lg hover:bg-slate-700 transition-colors"
-              >
-                Cerrar
-              </button>
+              <button onClick={() => setSelectedSale(null)} className="bg-slate-800 text-white px-6 py-2 rounded-lg hover:bg-slate-700 transition-colors">Cerrar</button>
             </div>
           </div>
         </div>
@@ -528,9 +460,7 @@ const DashboardView = ({ sales, products, onDeleteSale, onMigrate, migrating }) 
   );
 };
 
-// --- VISTAS 2 y 3: INVENTARIO y POS (Sin cambios, solo copiadas para integridad) ---
-// (Se mantienen idénticas para que el archivo sea funcional completo)
-
+// --- VISTA 2: INVENTARIO ---
 const InventoryView = ({ products, onAdd, onUpdate, onDelete, showNotification }) => {
   const [isEditing, setIsEditing] = useState(false);
   const [searchTerm, setSearchTerm] = useState('');
@@ -575,6 +505,8 @@ const InventoryView = ({ products, onAdd, onUpdate, onDelete, showNotification }
       stock: product.stock
     });
     setIsEditing(true);
+    // Scroll to top on mobile to see form
+    window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   const filteredProducts = products.filter(p => 
@@ -585,7 +517,7 @@ const InventoryView = ({ products, onAdd, onUpdate, onDelete, showNotification }
   return (
     <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
       <div className="lg:col-span-1">
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-pink-100 sticky top-24">
+        <div className="bg-white p-6 rounded-xl shadow-sm border border-pink-100 lg:sticky lg:top-4">
           <h3 className="text-lg font-bold text-slate-800 mb-4 flex items-center gap-2">
             {isEditing ? 'Editar Producto' : 'Nuevo Producto'}
             {isEditing && <span className="text-xs bg-amber-100 text-amber-700 px-2 py-1 rounded">Modo Edición</span>}
@@ -631,47 +563,51 @@ const InventoryView = ({ products, onAdd, onUpdate, onDelete, showNotification }
           <input type="text" placeholder="Buscar..." className="flex-1 outline-none text-slate-700 placeholder:text-slate-400" value={searchTerm} onChange={(e) => setSearchTerm(e.target.value)} />
         </div>
         <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
-          <table className="w-full text-left">
-            <thead className="bg-slate-50 text-slate-500 text-xs uppercase font-semibold">
-              <tr>
-                <th className="px-4 py-3">Producto</th>
-                <th className="px-4 py-3 text-right">Costo</th>
-                <th className="px-4 py-3 text-right">P. Venta</th>
-                <th className="px-4 py-3 text-center">Stock</th>
-                <th className="px-4 py-3 text-center">Acciones</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-50 text-sm">
-              {filteredProducts.map(product => (
-                <tr key={product.id} className="hover:bg-slate-50 transition-colors group">
-                  <td className="px-4 py-3">
-                    <p className="font-medium text-slate-800">{product.name}</p>
-                    <p className="text-xs text-slate-500">{product.category}</p>
-                  </td>
-                  <td className="px-4 py-3 text-right text-slate-500">Q{product.cost.toFixed(2)}</td>
-                  <td className="px-4 py-3 text-right font-bold text-slate-800">Q{product.price.toFixed(2)}</td>
-                  <td className="px-4 py-3 text-center">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${product.stock < 5 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{product.stock}</span>
-                  </td>
-                  <td className="px-4 py-3 text-center">
-                    <div className="flex justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button onClick={() => startEdit(product)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"><Package size={16} /></button>
-                      <button onClick={() => onDelete(product.id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded"><Trash2 size={16} /></button>
-                    </div>
-                  </td>
+          <div className="overflow-x-auto">
+            <table className="w-full text-left min-w-[600px]">
+              <thead className="bg-slate-50 text-slate-500 text-xs uppercase font-semibold">
+                <tr>
+                  <th className="px-4 py-3">Producto</th>
+                  <th className="px-4 py-3 text-right">Costo</th>
+                  <th className="px-4 py-3 text-right">P. Venta</th>
+                  <th className="px-4 py-3 text-center">Stock</th>
+                  <th className="px-4 py-3 text-center">Acciones</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
+              </thead>
+              <tbody className="divide-y divide-slate-50 text-sm">
+                {filteredProducts.map(product => (
+                  <tr key={product.id} className="hover:bg-slate-50 transition-colors group">
+                    <td className="px-4 py-3">
+                      <p className="font-medium text-slate-800">{product.name}</p>
+                      <p className="text-xs text-slate-500">{product.category}</p>
+                    </td>
+                    <td className="px-4 py-3 text-right text-slate-500">Q{product.cost.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-right font-bold text-slate-800">Q{product.price.toFixed(2)}</td>
+                    <td className="px-4 py-3 text-center">
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${product.stock < 5 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{product.stock}</span>
+                    </td>
+                    <td className="px-4 py-3 text-center">
+                      <div className="flex justify-center gap-2">
+                        <button onClick={() => startEdit(product)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded"><Package size={16} /></button>
+                        <button onClick={() => onDelete(product.id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded"><Trash2 size={16} /></button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
       </div>
     </div>
   );
 };
 
+// --- VISTA 3: PUNTO DE VENTA (POS Responsive) ---
 const POSView = ({ products, cart, setCart, onCheckout, showNotification }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [customerName, setCustomerName] = useState('');
+  const [showMobileCart, setShowMobileCart] = useState(false);
 
   const addToCart = (product) => {
     if (product.stock <= 0) { showNotification("¡Producto agotado!", "error"); return; }
@@ -700,24 +636,27 @@ const POSView = ({ products, cart, setCart, onCheckout, showNotification }) => {
   const cartTotal = cart.reduce((acc, item) => acc + (item.price * item.quantity), 0);
   const cartProfit = cart.reduce((acc, item) => acc + ((item.price - item.cost) * item.quantity), 0);
   const filteredProducts = products.filter(p => p.name.toLowerCase().includes(searchTerm.toLowerCase()) && p.stock > 0);
+  const cartItemCount = cart.reduce((acc, item) => acc + item.quantity, 0);
 
   const handleCompleteSale = () => {
     onCheckout(cart, cartTotal, cartProfit, customerName);
     setCustomerName(''); 
+    setShowMobileCart(false);
   };
 
   return (
-    <div className="flex h-[calc(100vh-140px)] gap-6">
-      <div className="flex-1 flex flex-col">
-        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 mb-4 flex items-center gap-2">
+    <div className="flex flex-col lg:flex-row h-full lg:h-[calc(100vh-140px)] gap-6 relative">
+      {/* Lista de Productos */}
+      <div className="flex-1 flex flex-col h-full overflow-hidden">
+        <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 mb-4 flex items-center gap-2 shrink-0">
           <Search className="text-slate-400" />
           <input type="text" placeholder="Buscar producto..." className="flex-1 outline-none" value={searchTerm} onChange={e => setSearchTerm(e.target.value)} autoFocus />
         </div>
-        <div className="flex-1 overflow-y-auto pr-2 grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 content-start">
+        <div className="flex-1 overflow-y-auto pr-2 grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4 content-start pb-20 lg:pb-0">
           {filteredProducts.map(product => (
-            <button key={product.id} onClick={() => addToCart(product)} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 hover:border-pink-300 hover:shadow-md transition-all text-left flex flex-col justify-between group h-32">
+            <button key={product.id} onClick={() => addToCart(product)} className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 hover:border-pink-300 hover:shadow-md transition-all text-left flex flex-col justify-between group h-32 relative active:scale-95 duration-100">
               <div>
-                <h4 className="font-semibold text-slate-700 leading-tight line-clamp-2">{product.name}</h4>
+                <h4 className="font-semibold text-slate-700 leading-tight line-clamp-2 text-sm md:text-base">{product.name}</h4>
                 <p className="text-xs text-slate-500 mt-1">{product.category}</p>
               </div>
               <div className="flex justify-between items-end mt-2">
@@ -729,11 +668,41 @@ const POSView = ({ products, cart, setCart, onCheckout, showNotification }) => {
         </div>
       </div>
 
-      <div className="w-96 bg-white rounded-xl shadow-lg border border-slate-200 flex flex-col h-full">
-        <div className="p-4 border-b border-slate-100 bg-pink-50 rounded-t-xl">
+      {/* Carrito Móvil Toggle (Barra Flotante) */}
+      {cart.length > 0 && !showMobileCart && (
+        <div className="lg:hidden fixed bottom-16 left-4 right-4 z-30">
+          <button 
+            onClick={() => setShowMobileCart(true)}
+            className="w-full bg-slate-900 text-white p-4 rounded-xl shadow-xl flex justify-between items-center"
+          >
+            <div className="flex items-center gap-2">
+              <div className="bg-pink-600 text-xs font-bold w-6 h-6 rounded-full flex items-center justify-center">{cartItemCount}</div>
+              <span className="font-medium">Ver Carrito</span>
+            </div>
+            <span className="font-bold text-lg">Q{cartTotal.toFixed(2)}</span>
+          </button>
+        </div>
+      )}
+
+      {/* Columna Carrito (Desktop: Siempre visible, Mobile: Overlay) */}
+      <div className={`
+        fixed inset-0 z-50 bg-white lg:static lg:bg-transparent lg:z-auto
+        flex flex-col w-full lg:w-96 lg:rounded-xl lg:shadow-lg lg:border lg:border-slate-200 lg:h-full
+        transition-transform duration-300 ease-in-out
+        ${showMobileCart ? 'translate-y-0' : 'translate-y-full lg:translate-y-0'}
+      `}>
+        {/* Header Carrito Mobile */}
+        <div className="lg:hidden p-4 border-b border-slate-100 flex justify-between items-center bg-pink-50">
+           <h3 className="font-bold text-slate-800">Carrito de Venta</h3>
+           <button onClick={() => setShowMobileCart(false)} className="p-2 bg-white rounded-full text-slate-500 shadow-sm"><X size={20}/></button>
+        </div>
+
+        {/* Header Carrito Desktop */}
+        <div className="hidden lg:block p-4 border-b border-slate-100 bg-pink-50 lg:rounded-t-xl">
           <h3 className="font-bold text-slate-800 flex items-center gap-2"><ShoppingCart size={20} className="text-pink-600" /> Venta Actual</h3>
         </div>
-        <div className="flex-1 overflow-y-auto p-4 space-y-3">
+
+        <div className="flex-1 overflow-y-auto p-4 space-y-3 bg-white">
           {cart.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-slate-400 opacity-60">
               <ShoppingBag size={48} /><p>Carrito vacío</p>
@@ -757,7 +726,7 @@ const POSView = ({ products, cart, setCart, onCheckout, showNotification }) => {
             ))
           )}
         </div>
-        <div className="p-6 bg-slate-50 border-t border-slate-100 rounded-b-xl space-y-4">
+        <div className="p-6 bg-slate-50 border-t border-slate-100 lg:rounded-b-xl space-y-4">
           <div className="mb-4">
              <label className="text-xs font-semibold text-slate-500 uppercase">Cliente</label>
              <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2 mt-1 focus-within:ring-2 focus-within:ring-pink-200">
