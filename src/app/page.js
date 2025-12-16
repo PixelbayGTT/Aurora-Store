@@ -11,17 +11,16 @@ import {
   Save, 
   Search, 
   Minus, 
-  DollarSign, // Usaremos este icono pero representará Quetzales visualmente
+  DollarSign,
   ShoppingBag,
   X,
   Loader
 } from 'lucide-react';
 
 // --- Firebase Imports ---
-import { initializeApp } from 'firebase/app';
+import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
   getAuth, 
-  signInWithCustomToken, 
   signInAnonymously, 
   onAuthStateChanged 
 } from 'firebase/auth';
@@ -33,23 +32,26 @@ import {
   updateDoc, 
   deleteDoc, 
   onSnapshot,
-  writeBatch,
-  serverTimestamp
+  writeBatch
 } from 'firebase/firestore';
 
 // --- Firebase Configuration & Initialization ---
-const getFirebaseConfig = () => {
-  // En Vercel, usarías process.env.NEXT_PUBLIC_FIREBASE_CONFIG
-  if (typeof __firebase_config !== 'undefined') {
-    return JSON.parse(__firebase_config);
-  }
-  return null; // Fallback o manejo de error si no hay config
+const firebaseConfig = {
+  apiKey: process.env.NEXT_PUBLIC_FIREBASE_API_KEY,
+  authDomain: process.env.NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN,
+  projectId: process.env.NEXT_PUBLIC_FIREBASE_PROJECT_ID,
+  storageBucket: process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: process.env.NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID,
+  appId: process.env.NEXT_PUBLIC_FIREBASE_APP_ID
 };
 
-const app = initializeApp(getFirebaseConfig() || {});
+// Inicializar Firebase (Evita re-inicialización en recargas)
+const app = getApps().length === 0 ? initializeApp(firebaseConfig) : getApp();
 const auth = getAuth(app);
 const db = getFirestore(app);
-const appId = typeof __app_id !== 'undefined' ? __app_id : 'aura-beauty-app';
+
+// ID fijo para tu tienda (para organizar los datos en la BD)
+const appId = 'aura-beauty-store';
 
 // --- Componente Principal ---
 export default function AuraApp() {
@@ -57,7 +59,7 @@ export default function AuraApp() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [loading, setLoading] = useState(true);
   
-  // Estados de Datos (ahora vendrán de Firebase)
+  // Estados de Datos
   const [products, setProducts] = useState([]);
   const [sales, setSales] = useState([]);
   
@@ -69,11 +71,7 @@ export default function AuraApp() {
   useEffect(() => {
     const initAuth = async () => {
       try {
-        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
-          await signInWithCustomToken(auth, __initial_auth_token);
-        } else {
-          await signInAnonymously(auth);
-        }
+        await signInAnonymously(auth);
       } catch (error) {
         console.error("Auth error:", error);
       }
@@ -91,7 +89,7 @@ export default function AuraApp() {
   useEffect(() => {
     if (!user) return;
 
-    // Ruta privada por usuario: artifacts/{appId}/users/{userId}/products
+    // Ruta privada por usuario
     const productsRef = collection(db, 'artifacts', appId, 'users', user.uid, 'products');
     
     const unsubscribe = onSnapshot(productsRef, (snapshot) => {
@@ -115,7 +113,6 @@ export default function AuraApp() {
     
     const unsubscribe = onSnapshot(salesRef, (snapshot) => {
       const salesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      // Ordenamiento en cliente (Firestore rule 2: no complex queries)
       salesData.sort((a, b) => new Date(b.date) - new Date(a.date)); 
       setSales(salesData);
     }, (error) => {
