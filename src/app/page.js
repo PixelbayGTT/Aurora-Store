@@ -171,10 +171,16 @@ export default function AuraApp() {
 
   // 1. Efecto de Autenticación
   useEffect(() => {
-    // Ya no hacemos login anónimo automático
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      setLoading(false); // Dejamos de cargar cuando Firebase nos dice si hay usuario o no
+    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      // LOGICA DE SEGURIDAD: Si detectamos un usuario anónimo (sesión antigua),
+      // lo desconectamos forzosamente para pedir credenciales reales.
+      if (currentUser && currentUser.isAnonymous) {
+        await signOut(auth);
+        setUser(null);
+      } else {
+        setUser(currentUser);
+      }
+      setLoading(false);
     });
     return () => unsubscribe();
   }, []);
