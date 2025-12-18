@@ -106,7 +106,7 @@ const LoginView = () => {
               <input 
                 type="email" 
                 required
-                className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 transition-all"
+                className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 transition-all text-slate-900"
                 placeholder="admin@aura.com"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
@@ -121,7 +121,7 @@ const LoginView = () => {
               <input 
                 type="password" 
                 required
-                className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 transition-all"
+                className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 transition-all text-slate-900"
                 placeholder="••••••••"
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
