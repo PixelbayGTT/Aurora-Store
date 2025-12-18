@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   LayoutDashboard, 
   Package, 
@@ -19,7 +19,11 @@ import {
   User,
   FileText,
   Menu,
-  ChevronLeft
+  ChevronLeft,
+  Printer,     // Nuevo icono para imprimir
+  CheckCircle, // Icono estado Pagado
+  Clock,       // Icono estado Pendiente
+  Truck        // Icono estado Entregado
 } from 'lucide-react';
 
 // --- Firebase Imports ---
@@ -73,6 +77,9 @@ export default function AuraApp() {
   const [cart, setCart] = useState([]);
   const [notification, setNotification] = useState(null);
 
+  // Estado para el Recibo
+  const [receiptSale, setReceiptSale] = useState(null); // Venta a mostrar en el recibo
+
   // 1. Efecto de Autenticación
   useEffect(() => {
     const initAuth = async () => {
@@ -91,7 +98,7 @@ export default function AuraApp() {
     return () => unsubscribe();
   }, []);
 
-  // 2. Efecto de Datos (Productos - Ruta Pública)
+  // 2. Efecto de Datos (Productos)
   useEffect(() => {
     if (!user) return;
     const productsRef = collection(db, 'artifacts', appId, 'public', 'data', 'products');
@@ -107,7 +114,7 @@ export default function AuraApp() {
     return () => unsubscribe();
   }, [user]);
 
-  // 3. Efecto de Datos (Ventas - Ruta Pública)
+  // 3. Efecto de Datos (Ventas)
   useEffect(() => {
     if (!user) return;
     const salesRef = collection(db, 'artifacts', appId, 'public', 'data', 'sales');
@@ -161,18 +168,38 @@ export default function AuraApp() {
     }
   };
 
-  const handleProcessSale = async (cartItems, total, totalProfit, customerName) => {
+  // NUEVA: Función para actualizar estado de venta
+  const handleUpdateSaleStatus = async (saleId, newStatus) => {
+    if (!user) return;
+    try {
+      const saleRef = doc(db, 'artifacts', appId, 'public', 'data', 'sales', saleId);
+      await updateDoc(saleRef, { status: newStatus });
+      showNotification(`Estado actualizado a: ${newStatus}`);
+    } catch (error) {
+      console.error("Error updating sale status:", error);
+      showNotification("Error al cambiar estado", "error");
+    }
+  };
+
+  // Modificado: Acepta status
+  const handleProcessSale = async (cartItems, total, totalProfit, customerName, status = 'Pagado') => {
     if (!user) return;
     try {
       const batch = writeBatch(db);
-      const saleRef = doc(collection(db, 'artifacts', appId, 'public', 'data', 'sales'));
-      batch.set(saleRef, {
+      const newSaleId = doc(collection(db, 'artifacts', appId, 'public', 'data', 'sales')).id;
+      const saleRef = doc(db, 'artifacts', appId, 'public', 'data', 'sales', newSaleId);
+      
+      const saleData = {
+        id: newSaleId, // Guardamos ID también dentro del objeto para facilitar uso en recibo
         date: new Date().toISOString(),
         items: cartItems,
         total: total,
         totalProfit: totalProfit,
-        customerName: customerName || "Cliente Casual"
-      });
+        customerName: customerName || "Cliente Casual",
+        status: status // 'Pagado', 'Pendiente', 'Entregado'
+      };
+
+      batch.set(saleRef, saleData);
 
       cartItems.forEach(item => {
         const productRef = doc(db, 'artifacts', appId, 'public', 'data', 'products', item.id);
@@ -181,7 +208,11 @@ export default function AuraApp() {
 
       await batch.commit();
       setCart([]);
-      showNotification(`Venta registrada a ${customerName || "Cliente"}. Ganancia: Q${totalProfit.toFixed(2)}`);
+      
+      // Mostrar Recibo Automáticamente
+      setReceiptSale(saleData); 
+      
+      showNotification(`Venta registrada exitosamente.`);
     } catch (error) {
       console.error("Error processing sale:", error);
       showNotification("Error al procesar la venta", "error");
@@ -204,7 +235,7 @@ export default function AuraApp() {
       showNotification("Venta eliminada y stock restaurado correctamente.");
     } catch (error) {
       console.error("Error deleting sale:", error);
-      showNotification("Error al eliminar (¿Quizás un producto ya no existe?)", "error");
+      showNotification("Error al eliminar", "error");
     }
   };
 
@@ -220,13 +251,13 @@ export default function AuraApp() {
 
     switch (activeTab) {
       case 'dashboard':
-        return <DashboardView sales={sales} products={products} onDeleteSale={handleDeleteSale} />;
+        return <DashboardView sales={sales} products={products} onDeleteSale={handleDeleteSale} onUpdateStatus={handleUpdateSaleStatus} onViewReceipt={setReceiptSale} />;
       case 'inventory':
         return <InventoryView products={products} onAdd={handleAddProduct} onUpdate={handleUpdateProduct} onDelete={handleDeleteProduct} showNotification={showNotification} />;
       case 'pos':
         return <POSView products={products} cart={cart} setCart={setCart} onCheckout={handleProcessSale} showNotification={showNotification} />;
       default:
-        return <DashboardView sales={sales} products={products} onDeleteSale={handleDeleteSale} />;
+        return <DashboardView sales={sales} products={products} onDeleteSale={handleDeleteSale} onUpdateStatus={handleUpdateSaleStatus} onViewReceipt={setReceiptSale} />;
     }
   };
 
@@ -258,10 +289,8 @@ export default function AuraApp() {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col h-full overflow-hidden">
-        {/* Header Responsive */}
         <header className="bg-white p-4 md:p-6 border-b border-pink-50 shadow-sm flex justify-between items-center z-10 shrink-0">
           <div className="flex items-center gap-3">
-             {/* Logo solo en móvil */}
              <div className="md:hidden bg-pink-500 text-white p-1.5 rounded-lg">
                 <ShoppingBag size={20} />
              </div>
@@ -280,7 +309,6 @@ export default function AuraApp() {
           </div>
         </header>
 
-        {/* Content Scrollable */}
         <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8">
           {notification && (
             <div className={`fixed top-4 right-4 px-6 py-3 rounded-lg shadow-lg z-50 animate-bounce text-white ${notification.type === 'error' ? 'bg-red-500' : 'bg-emerald-500'}`}>
@@ -297,28 +325,25 @@ export default function AuraApp() {
         <MobileNavItem icon={<ShoppingCart size={24} />} label="Vender" active={activeTab === 'pos'} onClick={() => setActiveTab('pos')} />
         <MobileNavItem icon={<Package size={24} />} label="Items" active={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} />
       </nav>
+
+      {/* MODAL DE RECIBO GLOBAL */}
+      {receiptSale && (
+        <ReceiptModal sale={receiptSale} onClose={() => setReceiptSale(null)} />
+      )}
     </div>
   );
 }
 
+// --- COMPONENTES AUXILIARES ---
+
 const SidebarItem = ({ icon, label, active, onClick }) => (
-  <button
-    onClick={onClick}
-    className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${
-      active ? 'bg-pink-50 text-pink-700 font-medium shadow-sm' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'
-    }`}
-  >
+  <button onClick={onClick} className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl transition-all duration-200 ${active ? 'bg-pink-50 text-pink-700 font-medium shadow-sm' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-700'}`}>
     {icon} <span>{label}</span>
   </button>
 );
 
 const MobileNavItem = ({ icon, label, active, onClick }) => (
-  <button 
-    onClick={onClick}
-    className={`flex flex-col items-center justify-center p-2 rounded-lg w-full transition-colors ${
-      active ? 'text-pink-600' : 'text-slate-400'
-    }`}
-  >
+  <button onClick={onClick} className={`flex flex-col items-center justify-center p-2 rounded-lg w-full transition-colors ${active ? 'text-pink-600' : 'text-slate-400'}`}>
     {icon}
     <span className="text-[10px] font-medium mt-1">{label}</span>
   </button>
@@ -326,9 +351,7 @@ const MobileNavItem = ({ icon, label, active, onClick }) => (
 
 const StatCard = ({ title, value, icon, color, warning }) => (
   <div className={`p-6 rounded-xl border ${warning ? 'border-orange-200 bg-orange-50' : 'border-slate-100 bg-white'} shadow-sm flex items-center gap-4`}>
-    <div className={`p-3 rounded-full ${color}`}>
-      {icon}
-    </div>
+    <div className={`p-3 rounded-full ${color}`}>{icon}</div>
     <div>
       <p className="text-sm text-slate-500 font-medium">{title}</p>
       <h3 className={`text-2xl font-bold ${warning ? 'text-orange-600' : 'text-slate-800'}`}>{value}</h3>
@@ -336,14 +359,120 @@ const StatCard = ({ title, value, icon, color, warning }) => (
   </div>
 );
 
+// --- NUEVO: COMPONENTE DE RECIBO ---
+const ReceiptModal = ({ sale, onClose }) => {
+  const receiptRef = useRef(null);
+
+  const handlePrint = () => {
+    // Abrir una ventana nueva para imprimir solo el recibo
+    const content = receiptRef.current.innerHTML;
+    const printWindow = window.open('', '', 'height=600,width=400');
+    printWindow.document.write('<html><head><title>Recibo Aura</title>');
+    printWindow.document.write('<style>body{font-family: monospace; padding: 20px;} .header{text-align:center; margin-bottom: 20px;} .item{display:flex; justify-content:space-between; margin-bottom: 5px;} .total{border-top: 1px dashed #000; margin-top: 10px; padding-top: 10px; font-weight: bold; display: flex; justify-content: space-between;} .footer{text-align:center; margin-top: 20px; font-size: 12px;}</style>');
+    printWindow.document.write('</head><body>');
+    printWindow.document.write(content);
+    printWindow.document.write('</body></html>');
+    printWindow.document.close();
+    printWindow.print();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh]">
+        <div className="p-4 bg-pink-50 border-b border-pink-100 flex justify-between items-center">
+          <h3 className="font-bold text-pink-700 flex items-center gap-2">
+            <Printer size={18} /> Recibo de Venta
+          </h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+            <X size={24} />
+          </button>
+        </div>
+
+        <div className="p-6 overflow-y-auto bg-white" ref={receiptRef}>
+          <div className="text-center mb-6">
+            <h2 className="text-2xl font-bold text-slate-800 uppercase tracking-widest">Aura</h2>
+            <p className="text-xs text-slate-500 uppercase tracking-wide">Beauty Store</p>
+            <div className="w-full border-b border-dashed border-slate-300 my-4"></div>
+            <p className="text-sm text-slate-600">Fecha: {new Date(sale.date).toLocaleString()}</p>
+            <p className="text-sm text-slate-600">Cliente: {sale.customerName}</p>
+            <p className="text-sm font-bold mt-1 text-slate-800 uppercase">{sale.status || 'Pagado'}</p>
+          </div>
+
+          <div className="space-y-2 text-sm text-slate-700">
+            {sale.items.map((item, idx) => (
+              <div key={idx} className="flex justify-between items-start">
+                <span className="flex-1 mr-2">{item.name} <span className="text-slate-400">x{item.quantity}</span></span>
+                <span className="font-mono">Q{(item.price * item.quantity).toFixed(2)}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="w-full border-b border-dashed border-slate-300 my-4"></div>
+
+          <div className="flex justify-between items-center text-lg font-bold text-slate-800">
+            <span>TOTAL</span>
+            <span>Q{sale.total.toFixed(2)}</span>
+          </div>
+
+          <div className="mt-8 text-center text-xs text-slate-400">
+            <p>¡Gracias por tu compra!</p>
+            <p>Vuelve pronto</p>
+          </div>
+        </div>
+
+        <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-3">
+          <button onClick={onClose} className="flex-1 py-3 text-slate-600 font-medium hover:bg-slate-200 rounded-xl transition-colors">
+            Cerrar
+          </button>
+          <button onClick={handlePrint} className="flex-1 py-3 bg-slate-800 text-white font-medium hover:bg-slate-900 rounded-xl transition-colors flex items-center justify-center gap-2">
+            <Printer size={18} /> Imprimir
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // --- VISTA 1: DASHBOARD ---
-const DashboardView = ({ sales, products, onDeleteSale }) => {
+const DashboardView = ({ sales, products, onDeleteSale, onUpdateStatus, onViewReceipt }) => {
   const [selectedSale, setSelectedSale] = useState(null);
 
   const totalSales = sales.reduce((acc, sale) => acc + sale.total, 0);
   const totalProfit = sales.reduce((acc, sale) => acc + sale.totalProfit, 0);
   const totalStockValue = products.reduce((acc, prod) => acc + (prod.cost * prod.stock), 0);
   const lowStockCount = products.filter(p => p.stock < 5).length;
+
+  // Renderizador de Estado con color
+  const StatusBadge = ({ status, onClick }) => {
+    let colorClass = "bg-green-100 text-green-700 border-green-200";
+    let icon = <CheckCircle size={12} />;
+    
+    if (status === 'Pendiente') {
+      colorClass = "bg-amber-100 text-amber-700 border-amber-200";
+      icon = <Clock size={12} />;
+    } else if (status === 'Entregado') {
+      colorClass = "bg-blue-100 text-blue-700 border-blue-200";
+      icon = <Truck size={12} />;
+    }
+
+    return (
+      <button 
+        onClick={(e) => { e.stopPropagation(); onClick(); }}
+        className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-semibold border ${colorClass} hover:opacity-80 transition-opacity`}
+      >
+        {icon} {status || 'Pagado'}
+      </button>
+    );
+  };
+
+  const cycleStatus = (sale) => {
+    const current = sale.status || 'Pagado';
+    let next = 'Pagado';
+    if (current === 'Pagado') next = 'Entregado';
+    if (current === 'Entregado') next = 'Pendiente';
+    if (current === 'Pendiente') next = 'Pagado';
+    onUpdateStatus(sale.id, next);
+  };
 
   return (
     <div className="space-y-6">
@@ -359,13 +488,13 @@ const DashboardView = ({ sales, products, onDeleteSale }) => {
           <h3 className="font-semibold text-lg text-slate-700">Historial de Ventas</h3>
         </div>
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm text-slate-600 min-w-[600px]">
+          <table className="w-full text-left text-sm text-slate-600 min-w-[700px]">
             <thead className="bg-slate-50 text-slate-500 uppercase font-medium text-xs">
               <tr>
                 <th className="px-6 py-4">Cliente</th>
-                <th className="px-6 py-4">Fecha</th>
+                <th className="px-6 py-4">Estado</th>
                 <th className="px-6 py-4">Total</th>
-                <th className="px-6 py-4">Ganancia</th>
+                <th className="px-6 py-4">Fecha</th>
                 <th className="px-6 py-4 text-center">Acciones</th>
               </tr>
             </thead>
@@ -383,13 +512,16 @@ const DashboardView = ({ sales, products, onDeleteSale }) => {
                          {sale.customerName || "Cliente"}
                        </div>
                     </td>
-                    <td className="px-6 py-4 text-slate-500">{new Date(sale.date).toLocaleString()}</td>
+                    <td className="px-6 py-4">
+                      <StatusBadge status={sale.status} onClick={() => cycleStatus(sale)} />
+                    </td>
                     <td className="px-6 py-4 font-bold text-slate-700">Q{sale.total.toFixed(2)}</td>
-                    <td className="px-6 py-4 text-emerald-600 font-medium">+Q{sale.totalProfit.toFixed(2)}</td>
+                    <td className="px-6 py-4 text-slate-500 text-xs">{new Date(sale.date).toLocaleString()}</td>
                     <td className="px-6 py-4 text-center">
                       <div className="flex justify-center gap-2">
-                        <button onClick={() => setSelectedSale(sale)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded flex items-center gap-1 text-xs font-medium"><Eye size={16} /> Ver</button>
-                        <button onClick={() => onDeleteSale(sale)} className="p-1.5 text-red-600 hover:bg-red-50 rounded flex items-center gap-1 text-xs font-medium"><Trash2 size={16} /></button>
+                        <button onClick={() => onViewReceipt(sale)} className="p-1.5 text-slate-600 hover:bg-slate-100 rounded" title="Ver Recibo"><Printer size={16} /></button>
+                        <button onClick={() => setSelectedSale(sale)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded" title="Detalles"><Eye size={16} /></button>
+                        <button onClick={() => onDeleteSale(sale)} className="p-1.5 text-red-600 hover:bg-red-50 rounded" title="Borrar"><Trash2 size={16} /></button>
                       </div>
                     </td>
                   </tr>
@@ -418,6 +550,7 @@ const DashboardView = ({ sales, products, onDeleteSale }) => {
                  <div>
                    <p className="font-medium text-slate-700">Cliente:</p>
                    <p>{selectedSale.customerName || "No registrado"}</p>
+                   <p className="mt-1 font-bold text-xs uppercase text-slate-400">{selectedSale.status || 'Pagado'}</p>
                  </div>
                  <div className="text-right">
                    <p className="font-medium text-slate-700">Fecha:</p>
@@ -450,7 +583,10 @@ const DashboardView = ({ sales, products, onDeleteSale }) => {
                  <span className="text-2xl font-bold text-pink-600">Q{selectedSale.total.toFixed(2)}</span>
               </div>
             </div>
-            <div className="p-4 bg-slate-50 border-t border-slate-100 text-right">
+            <div className="p-4 bg-slate-50 border-t border-slate-100 text-right flex gap-2 justify-end">
+              <button onClick={() => { setSelectedSale(null); onViewReceipt(selectedSale); }} className="text-slate-600 hover:bg-slate-200 px-4 py-2 rounded-lg text-sm font-medium flex items-center gap-2">
+                <Printer size={16}/> Imprimir Recibo
+              </button>
               <button onClick={() => setSelectedSale(null)} className="bg-slate-800 text-white px-6 py-2 rounded-lg hover:bg-slate-700 transition-colors">Cerrar</button>
             </div>
           </div>
@@ -505,7 +641,6 @@ const InventoryView = ({ products, onAdd, onUpdate, onDelete, showNotification }
       stock: product.stock
     });
     setIsEditing(true);
-    // Scroll to top on mobile to see form
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
@@ -607,6 +742,7 @@ const InventoryView = ({ products, onAdd, onUpdate, onDelete, showNotification }
 const POSView = ({ products, cart, setCart, onCheckout, showNotification }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [customerName, setCustomerName] = useState('');
+  const [saleStatus, setSaleStatus] = useState('Pagado'); // Estado inicial
   const [showMobileCart, setShowMobileCart] = useState(false);
 
   const addToCart = (product) => {
@@ -639,14 +775,14 @@ const POSView = ({ products, cart, setCart, onCheckout, showNotification }) => {
   const cartItemCount = cart.reduce((acc, item) => acc + item.quantity, 0);
 
   const handleCompleteSale = () => {
-    onCheckout(cart, cartTotal, cartProfit, customerName);
+    onCheckout(cart, cartTotal, cartProfit, customerName, saleStatus);
     setCustomerName(''); 
+    setSaleStatus('Pagado'); // Resetear a Pagado
     setShowMobileCart(false);
   };
 
   return (
     <div className="flex flex-col lg:flex-row h-full lg:h-[calc(100vh-140px)] gap-6 relative">
-      {/* Lista de Productos */}
       <div className="flex-1 flex flex-col h-full overflow-hidden">
         <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-100 mb-4 flex items-center gap-2 shrink-0">
           <Search className="text-slate-400" />
@@ -668,7 +804,6 @@ const POSView = ({ products, cart, setCart, onCheckout, showNotification }) => {
         </div>
       </div>
 
-      {/* Carrito Móvil Toggle (Barra Flotante) */}
       {cart.length > 0 && !showMobileCart && (
         <div className="lg:hidden fixed bottom-16 left-4 right-4 z-30">
           <button 
@@ -684,20 +819,17 @@ const POSView = ({ products, cart, setCart, onCheckout, showNotification }) => {
         </div>
       )}
 
-      {/* Columna Carrito (Desktop: Siempre visible, Mobile: Overlay) */}
       <div className={`
         fixed inset-0 z-50 bg-white lg:static lg:bg-transparent lg:z-auto
         flex flex-col w-full lg:w-96 lg:rounded-xl lg:shadow-lg lg:border lg:border-slate-200 lg:h-full
         transition-transform duration-300 ease-in-out
         ${showMobileCart ? 'translate-y-0' : 'translate-y-full lg:translate-y-0'}
       `}>
-        {/* Header Carrito Mobile */}
         <div className="lg:hidden p-4 border-b border-slate-100 flex justify-between items-center bg-pink-50">
            <h3 className="font-bold text-slate-800">Carrito de Venta</h3>
            <button onClick={() => setShowMobileCart(false)} className="p-2 bg-white rounded-full text-slate-500 shadow-sm"><X size={20}/></button>
         </div>
 
-        {/* Header Carrito Desktop */}
         <div className="hidden lg:block p-4 border-b border-slate-100 bg-pink-50 lg:rounded-t-xl">
           <h3 className="font-bold text-slate-800 flex items-center gap-2"><ShoppingCart size={20} className="text-pink-600" /> Venta Actual</h3>
         </div>
@@ -727,9 +859,10 @@ const POSView = ({ products, cart, setCart, onCheckout, showNotification }) => {
           )}
         </div>
         <div className="p-6 bg-slate-50 border-t border-slate-100 lg:rounded-b-xl space-y-4">
-          <div className="mb-4">
-             <label className="text-xs font-semibold text-slate-500 uppercase">Cliente</label>
-             <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2 mt-1 focus-within:ring-2 focus-within:ring-pink-200">
+          
+          {/* Selector de Cliente */}
+          <div className="space-y-3">
+             <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-lg px-3 py-2 focus-within:ring-2 focus-within:ring-pink-200">
                 <User size={16} className="text-slate-400" />
                 <input 
                   type="text" 
@@ -739,9 +872,25 @@ const POSView = ({ products, cart, setCart, onCheckout, showNotification }) => {
                   onChange={(e) => setCustomerName(e.target.value)}
                 />
              </div>
+             
+             {/* Selector de Estado */}
+             <div className="flex gap-2">
+                <button 
+                  onClick={() => setSaleStatus('Pagado')}
+                  className={`flex-1 py-2 text-xs font-bold rounded-lg border transition-all ${saleStatus === 'Pagado' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-white text-slate-500 border-slate-200'}`}
+                >
+                  PAGADO
+                </button>
+                <button 
+                  onClick={() => setSaleStatus('Pendiente')}
+                  className={`flex-1 py-2 text-xs font-bold rounded-lg border transition-all ${saleStatus === 'Pendiente' ? 'bg-amber-100 text-amber-700 border-amber-200' : 'bg-white text-slate-500 border-slate-200'}`}
+                >
+                  PENDIENTE
+                </button>
+             </div>
           </div>
 
-          <div className="space-y-2">
+          <div className="space-y-2 pt-2 border-t border-slate-200">
             <div className="flex justify-between items-center">
               <span className="font-bold text-xl text-slate-800">Total</span>
               <span className="font-bold text-2xl text-pink-600">Q{cartTotal.toFixed(2)}</span>
@@ -753,9 +902,9 @@ const POSView = ({ products, cart, setCart, onCheckout, showNotification }) => {
           <button 
             onClick={handleCompleteSale}
             disabled={cart.length === 0}
-            className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg transition-all ${cart.length === 0 ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-gradient-to-r from-pink-600 to-purple-600 text-white hover:shadow-pink-200 hover:scale-[1.02]'}`}
+            className={`w-full py-4 rounded-xl font-bold text-lg shadow-lg transition-all flex items-center justify-center gap-2 ${cart.length === 0 ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-gradient-to-r from-pink-600 to-purple-600 text-white hover:shadow-pink-200 hover:scale-[1.02]'}`}
           >
-            Completar Venta
+             {saleStatus === 'Pendiente' ? 'Guardar Pedido' : 'Cobrar e Imprimir'}
           </button>
         </div>
       </div>
