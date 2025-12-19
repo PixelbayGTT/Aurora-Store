@@ -27,7 +27,7 @@ import {
   LogOut,      
   Lock,
   PieChart,
-  Wallet, // Icono para retiros
+  Wallet, 
   ArrowRight
 } from 'lucide-react';
 
@@ -163,7 +163,7 @@ export default function AuraApp() {
   // Estados de Datos
   const [products, setProducts] = useState([]);
   const [sales, setSales] = useState([]);
-  const [withdrawals, setWithdrawals] = useState([]); // Nuevo estado para retiros
+  const [withdrawals, setWithdrawals] = useState([]);
   
   // Estado local del Carrito
   const [cart, setCart] = useState([]);
@@ -178,8 +178,6 @@ export default function AuraApp() {
   // 1. Efecto de Autenticación
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      // LOGICA DE SEGURIDAD: Si detectamos un usuario anónimo (sesión antigua),
-      // lo desconectamos forzosamente para pedir credenciales reales.
       if (currentUser && currentUser.isAnonymous) {
         await signOut(auth);
         setUser(null);
@@ -191,7 +189,7 @@ export default function AuraApp() {
     return () => unsubscribe();
   }, []);
 
-  // 2. Efecto de Datos (Productos) - Solo si hay usuario
+  // 2. Efecto de Datos (Productos)
   useEffect(() => {
     if (!user) return;
     const productsRef = collection(db, 'artifacts', appId, 'public', 'data', 'products');
@@ -205,7 +203,7 @@ export default function AuraApp() {
     return () => unsubscribe();
   }, [user]);
 
-  // 3. Efecto de Datos (Ventas) - Solo si hay usuario
+  // 3. Efecto de Datos (Ventas)
   useEffect(() => {
     if (!user) return;
     const salesRef = collection(db, 'artifacts', appId, 'public', 'data', 'sales');
@@ -219,7 +217,7 @@ export default function AuraApp() {
     return () => unsubscribe();
   }, [user]);
 
-  // 4. Efecto de Datos (Retiros/Gastos) - Solo si hay usuario
+  // 4. Efecto de Datos (Retiros/Gastos)
   useEffect(() => {
     if (!user) return;
     const withdrawalsRef = collection(db, 'artifacts', appId, 'public', 'data', 'withdrawals');
@@ -347,7 +345,6 @@ export default function AuraApp() {
     }
   };
 
-  // Nueva función para registrar retiros
   const handleAddWithdrawal = async (withdrawalData) => {
     if (!user) return;
     try {
@@ -359,6 +356,20 @@ export default function AuraApp() {
     } catch (error) {
       console.error("Error adding withdrawal:", error);
       showNotification("Error al registrar retiro", "error");
+    }
+  };
+
+  // NUEVO: Función para eliminar retiros y devolver dinero a la caja virtual
+  const handleDeleteWithdrawal = async (id) => {
+    if (!user) return;
+    if (!window.confirm("¿Eliminar este registro? Si fue un pago a socio, se sumará de nuevo a su saldo pendiente.")) return;
+    
+    try {
+      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'withdrawals', id));
+      showNotification("Registro eliminado y saldo restaurado");
+    } catch (error) {
+      console.error("Error deleting withdrawal:", error);
+      showNotification("Error al eliminar", "error");
     }
   };
 
@@ -387,8 +398,7 @@ export default function AuraApp() {
       case 'pos':
         return <POSView products={products} cart={cart} setCart={setCart} onCheckout={handleProcessSale} showNotification={showNotification} />;
       case 'profits': 
-        // Solo renderizar si es Andy, sino volver al dashboard por seguridad
-        return isAndy ? <ProfitDistributionView sales={sales} withdrawals={withdrawals} onAddWithdrawal={handleAddWithdrawal} /> : <DashboardView sales={sales} products={products} onDeleteSale={handleDeleteSale} onUpdateStatus={handleUpdateSaleStatus} onViewReceipt={setReceiptSale} />;
+        return isAndy ? <ProfitDistributionView sales={sales} withdrawals={withdrawals} onAddWithdrawal={handleAddWithdrawal} onDeleteWithdrawal={handleDeleteWithdrawal} /> : <DashboardView sales={sales} products={products} onDeleteSale={handleDeleteSale} onUpdateStatus={handleUpdateSaleStatus} onViewReceipt={setReceiptSale} />;
       default:
         return <DashboardView sales={sales} products={products} onDeleteSale={handleDeleteSale} onUpdateStatus={handleUpdateSaleStatus} onViewReceipt={setReceiptSale} />;
     }
@@ -421,7 +431,6 @@ export default function AuraApp() {
         </nav>
 
         <div className="p-4 border-t border-pink-50">
-           {/* Botón Cerrar Sesión Desktop */}
            <button 
              onClick={handleLogout}
              className="flex items-center gap-2 w-full px-4 py-2 text-sm font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
@@ -452,7 +461,6 @@ export default function AuraApp() {
              <div className="h-8 w-8 rounded-full bg-pink-100 border border-pink-200 flex items-center justify-center text-pink-500 font-bold">
                 {user.email ? user.email[0].toUpperCase() : 'A'}
              </div>
-             {/* Botón Logout Mobile */}
              <button onClick={handleLogout} className="md:hidden p-2 text-slate-400 hover:text-red-500">
                 <LogOut size={20} />
              </button>
@@ -475,13 +483,11 @@ export default function AuraApp() {
         <MobileNavItem icon={<ShoppingCart size={24} />} label="Vender" active={activeTab === 'pos'} onClick={() => setActiveTab('pos')} />
         <MobileNavItem icon={<Package size={24} />} label="Items" active={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} />
         
-        {/* ICONO SOLO VISIBLE PARA ANDY EN MÓVIL */}
         {isAndy && (
           <MobileNavItem icon={<PieChart size={24} />} label="Socios" active={activeTab === 'profits'} onClick={() => setActiveTab('profits')} />
         )}
       </nav>
 
-      {/* MODAL DE RECIBO GLOBAL */}
       {receiptSale && (
         <ReceiptModal sale={receiptSale} onClose={() => setReceiptSale(null)} />
       )}
@@ -662,30 +668,40 @@ const WithdrawalReceiptModal = ({ data, onClose }) => {
   );
 };
 
-// --- VISTA 4: DISTRIBUCIÓN DE GANANCIAS (NUEVA) ---
-const ProfitDistributionView = ({ sales, withdrawals, onAddWithdrawal }) => {
+// --- VISTA 4: DISTRIBUCIÓN DE GANANCIAS (ACTUALIZADA CON LOGICA DE RESTA) ---
+const ProfitDistributionView = ({ sales, withdrawals, onAddWithdrawal, onDeleteWithdrawal }) => {
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
-  const [withdrawType, setWithdrawType] = useState('Pago Socio'); // 'Pago Socio' | 'Gasto Empresa'
+  const [withdrawType, setWithdrawType] = useState('Pago Socio');
   const [beneficiary, setBeneficiary] = useState('Andy');
   const [amount, setAmount] = useState('');
   const [description, setDescription] = useState('');
   const [receiptData, setReceiptData] = useState(null);
 
-  // Cálculos
+  // 1. Calcular Ganancias Totales
   const totalProfit = sales.reduce((acc, sale) => acc + (sale.totalProfit || 0), 0);
-  const totalWithdrawn = withdrawals.reduce((acc, w) => acc + parseFloat(w.amount), 0);
-  const cashInHand = totalProfit - totalWithdrawn; // DINERO EN CAJA (Ganancia Neta - Retiros)
   
-  // Porcentajes teóricos
-  const andyShare = totalProfit * 0.60;
-  const dafneShare = totalProfit * 0.40;
+  // 2. Calcular Retiros Totales y por Socio
+  const totalWithdrawn = withdrawals.reduce((acc, w) => acc + parseFloat(w.amount), 0);
+  const andyPaid = withdrawals.filter(w => w.beneficiary === 'Andy').reduce((acc, w) => acc + parseFloat(w.amount), 0);
+  const dafnePaid = withdrawals.filter(w => w.beneficiary === 'Dafne').reduce((acc, w) => acc + parseFloat(w.amount), 0);
+
+  // 3. Dinero en Caja (Ganancias - Todo lo que ha salido)
+  const cashInHand = totalProfit - totalWithdrawn;
+  
+  // 4. Calcular Saldos Pendientes (Lo que les toca - Lo que ya sacaron)
+  const andyTotalShare = totalProfit * 0.60;
+  const dafneTotalShare = totalProfit * 0.40;
+  
+  const andyRemaining = andyTotalShare - andyPaid;
+  const dafneRemaining = dafneTotalShare - dafnePaid;
 
   const handleSubmitWithdrawal = (e) => {
     e.preventDefault();
     if (!amount || parseFloat(amount) <= 0) return;
+    
+    // Validación opcional: No dejar sacar más de lo que hay en caja física
     if (parseFloat(amount) > cashInHand) {
-      alert("No hay suficiente dinero en caja para este retiro.");
-      return;
+      if(!window.confirm("El monto supera el dinero disponible en caja (basado en ganancias). ¿Continuar igual?")) return;
     }
 
     const newWithdrawal = {
@@ -696,9 +712,8 @@ const ProfitDistributionView = ({ sales, withdrawals, onAddWithdrawal }) => {
     };
 
     onAddWithdrawal(newWithdrawal);
-    setReceiptData({ ...newWithdrawal, date: new Date().toISOString() }); // Mostrar recibo
+    setReceiptData({ ...newWithdrawal, date: new Date().toISOString() }); 
     
-    // Resetear form
     setAmount('');
     setDescription('');
     setShowWithdrawModal(false);
@@ -722,7 +737,6 @@ const ProfitDistributionView = ({ sales, withdrawals, onAddWithdrawal }) => {
           </button>
         </div>
         
-        {/* Background Decoration */}
         <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
            <div className="absolute -top-10 -right-10 w-40 h-40 bg-emerald-500 rounded-full blur-3xl"></div>
            <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-purple-500 rounded-full blur-3xl"></div>
@@ -735,10 +749,23 @@ const ProfitDistributionView = ({ sales, withdrawals, onAddWithdrawal }) => {
            <div className="absolute top-0 right-0 bg-purple-100 text-purple-700 px-3 py-1 rounded-bl-xl font-bold text-xs">60%</div>
            <div className="flex items-center gap-3 mb-4">
              <div className="bg-purple-50 p-3 rounded-full text-purple-600"><User size={24} /></div>
-             <h4 className="font-bold text-lg text-slate-800">Andy</h4>
+             <div>
+               <h4 className="font-bold text-lg text-slate-800">Andy</h4>
+               <p className="text-xs text-slate-500">Saldo Pendiente de Cobro</p>
+             </div>
            </div>
-           <p className="text-sm text-slate-500">Participación Total:</p>
-           <p className="text-2xl font-bold text-purple-700">Q{andyShare.toFixed(2)}</p>
+           
+           <div className="flex justify-between items-end mb-2">
+             <p className="text-3xl font-bold text-purple-700">Q{andyRemaining.toFixed(2)}</p>
+             <p className="text-xs text-slate-400 mb-1">de Q{andyTotalShare.toFixed(2)}</p>
+           </div>
+           <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+              <div 
+                className="bg-purple-500 h-full rounded-full transition-all duration-500" 
+                style={{ width: `${Math.min((andyPaid / andyTotalShare) * 100, 100)}%` }}
+              ></div>
+           </div>
+           <p className="text-xs text-slate-400 mt-2 text-right">Pagado: Q{andyPaid.toFixed(2)}</p>
         </div>
 
         {/* Tarjeta de Dafne */}
@@ -746,17 +773,30 @@ const ProfitDistributionView = ({ sales, withdrawals, onAddWithdrawal }) => {
            <div className="absolute top-0 right-0 bg-pink-100 text-pink-700 px-3 py-1 rounded-bl-xl font-bold text-xs">40%</div>
            <div className="flex items-center gap-3 mb-4">
              <div className="bg-pink-50 p-3 rounded-full text-pink-600"><User size={24} /></div>
-             <h4 className="font-bold text-lg text-slate-800">Dafne</h4>
+             <div>
+               <h4 className="font-bold text-lg text-slate-800">Dafne</h4>
+               <p className="text-xs text-slate-500">Saldo Pendiente de Cobro</p>
+             </div>
            </div>
-           <p className="text-sm text-slate-500">Participación Total:</p>
-           <p className="text-2xl font-bold text-pink-700">Q{dafneShare.toFixed(2)}</p>
+           
+           <div className="flex justify-between items-end mb-2">
+             <p className="text-3xl font-bold text-pink-700">Q{dafneRemaining.toFixed(2)}</p>
+             <p className="text-xs text-slate-400 mb-1">de Q{dafneTotalShare.toFixed(2)}</p>
+           </div>
+           <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+              <div 
+                className="bg-pink-500 h-full rounded-full transition-all duration-500" 
+                style={{ width: `${Math.min((dafnePaid / dafneTotalShare) * 100, 100)}%` }}
+              ></div>
+           </div>
+           <p className="text-xs text-slate-400 mt-2 text-right">Pagado: Q{dafnePaid.toFixed(2)}</p>
         </div>
       </div>
 
       {/* Historial de Retiros */}
       <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
         <div className="p-6 border-b border-slate-50">
-          <h3 className="font-semibold text-lg text-slate-700">Historial de Retiros y Gastos</h3>
+          <h3 className="font-semibold text-lg text-slate-700">Historial de Movimientos</h3>
         </div>
         <div className="overflow-x-auto max-h-64">
           <table className="w-full text-left text-sm text-slate-600">
@@ -766,7 +806,7 @@ const ProfitDistributionView = ({ sales, withdrawals, onAddWithdrawal }) => {
                 <th className="px-6 py-3">Tipo</th>
                 <th className="px-6 py-3">Beneficiario</th>
                 <th className="px-6 py-3">Monto</th>
-                <th className="px-6 py-3 text-center">Recibo</th>
+                <th className="px-6 py-3 text-center">Acciones</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-50">
@@ -780,7 +820,10 @@ const ProfitDistributionView = ({ sales, withdrawals, onAddWithdrawal }) => {
                     <td className="px-6 py-3 font-medium">{w.beneficiary}</td>
                     <td className="px-6 py-3 font-bold text-red-500">-Q{parseFloat(w.amount).toFixed(2)}</td>
                     <td className="px-6 py-3 text-center">
-                      <button onClick={() => setReceiptData(w)} className="text-slate-400 hover:text-slate-600"><Printer size={16}/></button>
+                      <div className="flex justify-center gap-2">
+                        <button onClick={() => setReceiptData(w)} className="text-slate-400 hover:text-slate-600" title="Ver Recibo"><Printer size={16}/></button>
+                        <button onClick={() => onDeleteWithdrawal(w.id)} className="text-red-400 hover:text-red-600" title="Eliminar y Restaurar Saldo"><Trash2 size={16}/></button>
+                      </div>
                     </td>
                   </tr>
                 ))
@@ -849,7 +892,6 @@ const ProfitDistributionView = ({ sales, withdrawals, onAddWithdrawal }) => {
         </div>
       )}
 
-      {/* MODAL RECIBO DE RETIRO */}
       {receiptData && (
         <WithdrawalReceiptModal data={receiptData} onClose={() => setReceiptData(null)} />
       )}
