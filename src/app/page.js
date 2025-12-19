@@ -24,16 +24,17 @@ import {
   CheckCircle, 
   Clock,       
   Truck,
-  LogOut,      // Nuevo icono para cerrar sesión
-  Lock         // Icono para el login
+  LogOut,      
+  Lock,
+  PieChart // Nuevo icono para la sección de ganancias
 } from 'lucide-react';
 
 // --- Firebase Imports ---
 import { initializeApp, getApps, getApp } from 'firebase/app';
 import { 
   getAuth, 
-  signInWithEmailAndPassword, // Usamos esto en lugar de Anónimo
-  signOut,                   // Para cerrar sesión
+  signInWithEmailAndPassword, 
+  signOut,                   
   onAuthStateChanged 
 } from 'firebase/auth';
 import { 
@@ -79,7 +80,6 @@ const LoginView = () => {
     setLoggingIn(true);
     try {
       await signInWithEmailAndPassword(auth, email, password);
-      // El onAuthStateChanged en el componente principal manejará la redirección
     } catch (err) {
       console.error(err);
       setError('Credenciales incorrectas. Intenta de nuevo.');
@@ -168,6 +168,9 @@ export default function AuraApp() {
 
   // Estado para el Recibo
   const [receiptSale, setReceiptSale] = useState(null); 
+
+  // Variable auxiliar para verificar si es Andy
+  const isAndy = user?.email === 'andy@aurabeauty.com';
 
   // 1. Efecto de Autenticación
   useEffect(() => {
@@ -351,6 +354,9 @@ export default function AuraApp() {
         return <InventoryView products={products} onAdd={handleAddProduct} onUpdate={handleUpdateProduct} onDelete={handleDeleteProduct} showNotification={showNotification} />;
       case 'pos':
         return <POSView products={products} cart={cart} setCart={setCart} onCheckout={handleProcessSale} showNotification={showNotification} />;
+      case 'profits': 
+        // Solo renderizar si es Andy, sino volver al dashboard por seguridad
+        return isAndy ? <ProfitDistributionView sales={sales} /> : <DashboardView sales={sales} products={products} onDeleteSale={handleDeleteSale} onUpdateStatus={handleUpdateSaleStatus} onViewReceipt={setReceiptSale} />;
       default:
         return <DashboardView sales={sales} products={products} onDeleteSale={handleDeleteSale} onUpdateStatus={handleUpdateSaleStatus} onViewReceipt={setReceiptSale} />;
     }
@@ -375,6 +381,11 @@ export default function AuraApp() {
           <SidebarItem icon={<LayoutDashboard size={20} />} label="Panel General" active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
           <SidebarItem icon={<ShoppingCart size={20} />} label="Punto de Venta" active={activeTab === 'pos'} onClick={() => setActiveTab('pos')} />
           <SidebarItem icon={<Package size={20} />} label="Inventario" active={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} />
+          
+          {/* SECCIÓN SOLO VISIBLE PARA ANDY */}
+          {isAndy && (
+            <SidebarItem icon={<PieChart size={20} />} label="Socios / Ganancias" active={activeTab === 'profits'} onClick={() => setActiveTab('profits')} />
+          )}
         </nav>
 
         <div className="p-4 border-t border-pink-50">
@@ -400,6 +411,7 @@ export default function AuraApp() {
               {activeTab === 'dashboard' && 'Resumen'}
               {activeTab === 'inventory' && 'Inventario'}
               {activeTab === 'pos' && 'Caja'}
+              {activeTab === 'profits' && 'Distribución de Socios'}
             </h2>
           </div>
           
@@ -430,6 +442,11 @@ export default function AuraApp() {
         <MobileNavItem icon={<LayoutDashboard size={24} />} label="Panel" active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
         <MobileNavItem icon={<ShoppingCart size={24} />} label="Vender" active={activeTab === 'pos'} onClick={() => setActiveTab('pos')} />
         <MobileNavItem icon={<Package size={24} />} label="Items" active={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} />
+        
+        {/* ICONO SOLO VISIBLE PARA ANDY EN MÓVIL */}
+        {isAndy && (
+          <MobileNavItem icon={<PieChart size={24} />} label="Socios" active={activeTab === 'profits'} onClick={() => setActiveTab('profits')} />
+        )}
       </nav>
 
       {/* MODAL DE RECIBO GLOBAL */}
@@ -533,6 +550,77 @@ const ReceiptModal = ({ sale, onClose }) => {
             <Printer size={18} /> Imprimir
           </button>
         </div>
+      </div>
+    </div>
+  );
+};
+
+// --- VISTA 4: DISTRIBUCIÓN DE GANANCIAS (NUEVA) ---
+const ProfitDistributionView = ({ sales }) => {
+  // Solo consideramos ventas que NO están pendientes o canceladas para el cálculo real, o todas si prefieres proyectar.
+  // Aquí usamos todas las ventas registradas con ganancia.
+  const totalProfit = sales.reduce((acc, sale) => acc + (sale.totalProfit || 0), 0);
+  
+  // Cálculo de porcentajes
+  const andyShare = totalProfit * 0.60;
+  const dafneShare = totalProfit * 0.40;
+
+  return (
+    <div className="space-y-8 max-w-4xl mx-auto">
+      <div className="bg-white p-8 rounded-2xl shadow-sm border border-pink-100 text-center">
+        <h3 className="text-lg font-bold text-slate-600 mb-2 uppercase tracking-wide">Ganancia Neta Total</h3>
+        <p className="text-5xl font-black text-emerald-500 mb-2">Q{totalProfit.toFixed(2)}</p>
+        <p className="text-sm text-slate-400">Utilidad calculada después de costos de inventario</p>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+        {/* Tarjeta de Andy */}
+        <div className="bg-gradient-to-br from-purple-50 to-white p-8 rounded-2xl border border-purple-100 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
+           <div className="absolute top-0 right-0 bg-purple-600 px-4 py-2 rounded-bl-xl text-white font-bold text-sm shadow-sm">
+             60% Acciones
+           </div>
+           
+           <div className="flex items-center gap-4 mb-6">
+             <div className="bg-purple-100 p-4 rounded-full text-purple-600 group-hover:scale-110 transition-transform">
+               <User size={32} />
+             </div>
+             <div>
+               <h4 className="font-bold text-xl text-slate-800">Andy</h4>
+               <p className="text-xs font-medium text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full inline-block mt-1">andy@aurabeauty.com</p>
+             </div>
+           </div>
+           
+           <div className="border-t border-purple-100 pt-4">
+             <p className="text-sm text-slate-500 mb-1">Participación en Ganancias</p>
+             <p className="text-3xl font-bold text-purple-700">Q{andyShare.toFixed(2)}</p>
+           </div>
+        </div>
+
+        {/* Tarjeta de Dafne */}
+        <div className="bg-gradient-to-br from-pink-50 to-white p-8 rounded-2xl border border-pink-100 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
+           <div className="absolute top-0 right-0 bg-pink-600 px-4 py-2 rounded-bl-xl text-white font-bold text-sm shadow-sm">
+             40% Acciones
+           </div>
+           
+           <div className="flex items-center gap-4 mb-6">
+             <div className="bg-pink-100 p-4 rounded-full text-pink-600 group-hover:scale-110 transition-transform">
+               <User size={32} />
+             </div>
+             <div>
+               <h4 className="font-bold text-xl text-slate-800">Dafne</h4>
+               <p className="text-xs font-medium text-pink-600 bg-pink-50 px-2 py-0.5 rounded-full inline-block mt-1">Socio</p>
+             </div>
+           </div>
+           
+           <div className="border-t border-pink-100 pt-4">
+             <p className="text-sm text-slate-500 mb-1">Participación en Ganancias</p>
+             <p className="text-3xl font-bold text-pink-700">Q{dafneShare.toFixed(2)}</p>
+           </div>
+        </div>
+      </div>
+      
+      <div className="bg-slate-50 p-4 rounded-lg text-center text-xs text-slate-400">
+        * Los cálculos se basan exclusivamente en la utilidad (Precio Venta - Precio Costo) de todas las ventas registradas.
       </div>
     </div>
   );
