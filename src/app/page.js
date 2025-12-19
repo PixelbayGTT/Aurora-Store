@@ -178,6 +178,8 @@ export default function AuraApp() {
   // 1. Efecto de Autenticación
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
+      // LOGICA DE SEGURIDAD: Si detectamos un usuario anónimo (sesión antigua),
+      // lo desconectamos forzosamente para pedir credenciales reales.
       if (currentUser && currentUser.isAnonymous) {
         await signOut(auth);
         setUser(null);
@@ -682,8 +684,10 @@ function ProfitDistributionView({ sales, withdrawals, onAddWithdrawal, onDeleteW
   const [description, setDescription] = useState('');
   const [receiptData, setReceiptData] = useState(null);
 
-  // 1. Calcular Ganancias Totales
-  const totalProfit = sales.reduce((acc, sale) => acc + (sale.totalProfit || 0), 0);
+  // 1. Calcular Ganancias Totales (Solo Pagado o Entregado)
+  const totalProfit = sales
+    .filter(sale => !sale.status || sale.status === 'Pagado' || sale.status === 'Entregado')
+    .reduce((acc, sale) => acc + (sale.totalProfit || 0), 0);
   
   // 2. Calcular Retiros y Gastos
   const totalWithdrawn = withdrawals.reduce((acc, w) => acc + parseFloat(w.amount), 0);
