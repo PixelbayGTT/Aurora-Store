@@ -26,7 +26,9 @@ import {
   Truck,
   LogOut,      
   Lock,
-  PieChart // Nuevo icono para la sección de ganancias
+  PieChart,
+  Wallet, // Icono para retiros
+  ArrowRight
 } from 'lucide-react';
 
 // --- Firebase Imports ---
@@ -161,6 +163,7 @@ export default function AuraApp() {
   // Estados de Datos
   const [products, setProducts] = useState([]);
   const [sales, setSales] = useState([]);
+  const [withdrawals, setWithdrawals] = useState([]); // Nuevo estado para retiros
   
   // Estado local del Carrito
   const [cart, setCart] = useState([]);
@@ -212,6 +215,20 @@ export default function AuraApp() {
       setSales(salesData);
     }, (error) => {
       console.error("Error fetching sales:", error);
+    });
+    return () => unsubscribe();
+  }, [user]);
+
+  // 4. Efecto de Datos (Retiros/Gastos) - Solo si hay usuario
+  useEffect(() => {
+    if (!user) return;
+    const withdrawalsRef = collection(db, 'artifacts', appId, 'public', 'data', 'withdrawals');
+    const unsubscribe = onSnapshot(withdrawalsRef, (snapshot) => {
+      const wData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      wData.sort((a, b) => new Date(b.date) - new Date(a.date)); 
+      setWithdrawals(wData);
+    }, (error) => {
+      console.error("Error fetching withdrawals:", error);
     });
     return () => unsubscribe();
   }, [user]);
@@ -330,6 +347,21 @@ export default function AuraApp() {
     }
   };
 
+  // Nueva función para registrar retiros
+  const handleAddWithdrawal = async (withdrawalData) => {
+    if (!user) return;
+    try {
+      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'withdrawals'), {
+        ...withdrawalData,
+        date: new Date().toISOString()
+      });
+      showNotification("Retiro registrado correctamente");
+    } catch (error) {
+      console.error("Error adding withdrawal:", error);
+      showNotification("Error al registrar retiro", "error");
+    }
+  };
+
   // --- LÓGICA DE RENDERIZADO PRINCIPAL ---
   if (loading) {
     return (
@@ -356,7 +388,7 @@ export default function AuraApp() {
         return <POSView products={products} cart={cart} setCart={setCart} onCheckout={handleProcessSale} showNotification={showNotification} />;
       case 'profits': 
         // Solo renderizar si es Andy, sino volver al dashboard por seguridad
-        return isAndy ? <ProfitDistributionView sales={sales} /> : <DashboardView sales={sales} products={products} onDeleteSale={handleDeleteSale} onUpdateStatus={handleUpdateSaleStatus} onViewReceipt={setReceiptSale} />;
+        return isAndy ? <ProfitDistributionView sales={sales} withdrawals={withdrawals} onAddWithdrawal={handleAddWithdrawal} /> : <DashboardView sales={sales} products={products} onDeleteSale={handleDeleteSale} onUpdateStatus={handleUpdateSaleStatus} onViewReceipt={setReceiptSale} />;
       default:
         return <DashboardView sales={sales} products={products} onDeleteSale={handleDeleteSale} onUpdateStatus={handleUpdateSaleStatus} onViewReceipt={setReceiptSale} />;
     }
@@ -555,73 +587,272 @@ const ReceiptModal = ({ sale, onClose }) => {
   );
 };
 
+// --- COMPONENTE DE RECIBO DE RETIRO ---
+const WithdrawalReceiptModal = ({ data, onClose }) => {
+  const receiptRef = useRef(null);
+
+  const handlePrint = () => {
+    const content = receiptRef.current.innerHTML;
+    const printWindow = window.open('', '', 'height=600,width=400');
+    printWindow.document.write('<html><head><title>Comprobante de Retiro</title>');
+    printWindow.document.write('<style>body{font-family: monospace; padding: 20px;} .header{text-align:center; margin-bottom: 20px;} .total{border-top: 1px dashed #000; margin-top: 10px; padding-top: 10px; font-weight: bold; font-size: 1.2em; text-align: right;} .footer{text-align:center; margin-top: 30px; font-size: 12px; border-top: 1px solid #ccc; padding-top: 10px; width: 80%; margin-left: auto; margin-right: auto;}</style>');
+    printWindow.document.write('</head><body>');
+    printWindow.document.write(content);
+    printWindow.document.write('</body></html>');
+    printWindow.document.close();
+    printWindow.print();
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-[60] p-4">
+      <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in fade-in zoom-in duration-200 flex flex-col max-h-[90vh]">
+        <div className="p-4 bg-pink-50 border-b border-pink-100 flex justify-between items-center">
+          <h3 className="font-bold text-pink-700 flex items-center gap-2">
+            <FileText size={18} /> Comprobante
+          </h3>
+          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+            <X size={24} />
+          </button>
+        </div>
+
+        <div className="p-6 overflow-y-auto bg-white" ref={receiptRef}>
+          <div className="text-center mb-6">
+            <h2 className="text-xl font-bold text-slate-800 uppercase tracking-widest">Aura Beauty</h2>
+            <p className="text-xs text-slate-500 uppercase tracking-wide">Comprobante de Egreso</p>
+            <div className="w-full border-b border-dashed border-slate-300 my-4"></div>
+            <p className="text-sm text-slate-600">Fecha: {new Date(data.date).toLocaleString()}</p>
+            <p className="text-sm font-bold mt-2 text-slate-800 uppercase bg-slate-100 inline-block px-2 py-1 rounded">{data.type}</p>
+          </div>
+
+          <div className="space-y-3 text-sm text-slate-700 mt-4">
+            <div className="flex justify-between">
+              <span className="font-bold text-slate-500">Beneficiario:</span>
+              <span>{data.beneficiary}</span>
+            </div>
+            <div className="flex justify-between">
+              <span className="font-bold text-slate-500">Concepto:</span>
+              <span className="text-right max-w-[150px]">{data.description || '-'}</span>
+            </div>
+          </div>
+
+          <div className="w-full border-b border-dashed border-slate-300 my-4"></div>
+
+          <div className="flex justify-between items-center text-xl font-bold text-slate-800">
+            <span>MONTO</span>
+            <span>Q{parseFloat(data.amount).toFixed(2)}</span>
+          </div>
+
+          <div className="mt-12 text-center text-xs text-slate-400">
+            <div className="border-t border-slate-300 w-3/4 mx-auto pt-2">
+              Firma de Recibido
+            </div>
+          </div>
+        </div>
+
+        <div className="p-4 border-t border-slate-100 bg-slate-50 flex gap-3">
+          <button onClick={onClose} className="flex-1 py-3 text-slate-600 font-medium hover:bg-slate-200 rounded-xl transition-colors">
+            Cerrar
+          </button>
+          <button onClick={handlePrint} className="flex-1 py-3 bg-slate-800 text-white font-medium hover:bg-slate-900 rounded-xl transition-colors flex items-center justify-center gap-2">
+            <Printer size={18} /> Imprimir
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
 // --- VISTA 4: DISTRIBUCIÓN DE GANANCIAS (NUEVA) ---
-const ProfitDistributionView = ({ sales }) => {
-  // Solo consideramos ventas que NO están pendientes o canceladas para el cálculo real, o todas si prefieres proyectar.
-  // Aquí usamos todas las ventas registradas con ganancia.
+const ProfitDistributionView = ({ sales, withdrawals, onAddWithdrawal }) => {
+  const [showWithdrawModal, setShowWithdrawModal] = useState(false);
+  const [withdrawType, setWithdrawType] = useState('Pago Socio'); // 'Pago Socio' | 'Gasto Empresa'
+  const [beneficiary, setBeneficiary] = useState('Andy');
+  const [amount, setAmount] = useState('');
+  const [description, setDescription] = useState('');
+  const [receiptData, setReceiptData] = useState(null);
+
+  // Cálculos
   const totalProfit = sales.reduce((acc, sale) => acc + (sale.totalProfit || 0), 0);
+  const totalWithdrawn = withdrawals.reduce((acc, w) => acc + parseFloat(w.amount), 0);
+  const cashInHand = totalProfit - totalWithdrawn; // DINERO EN CAJA (Ganancia Neta - Retiros)
   
-  // Cálculo de porcentajes
+  // Porcentajes teóricos
   const andyShare = totalProfit * 0.60;
   const dafneShare = totalProfit * 0.40;
 
+  const handleSubmitWithdrawal = (e) => {
+    e.preventDefault();
+    if (!amount || parseFloat(amount) <= 0) return;
+    if (parseFloat(amount) > cashInHand) {
+      alert("No hay suficiente dinero en caja para este retiro.");
+      return;
+    }
+
+    const newWithdrawal = {
+      type: withdrawType,
+      beneficiary: withdrawType === 'Gasto Empresa' ? 'Empresa' : beneficiary,
+      amount: parseFloat(amount),
+      description: description,
+    };
+
+    onAddWithdrawal(newWithdrawal);
+    setReceiptData({ ...newWithdrawal, date: new Date().toISOString() }); // Mostrar recibo
+    
+    // Resetear form
+    setAmount('');
+    setDescription('');
+    setShowWithdrawModal(false);
+  };
+
   return (
-    <div className="space-y-8 max-w-4xl mx-auto">
-      <div className="bg-white p-8 rounded-2xl shadow-sm border border-pink-100 text-center">
-        <h3 className="text-lg font-bold text-slate-600 mb-2 uppercase tracking-wide">Ganancia Neta Total</h3>
-        <p className="text-5xl font-black text-emerald-500 mb-2">Q{totalProfit.toFixed(2)}</p>
-        <p className="text-sm text-slate-400">Utilidad calculada después de costos de inventario</p>
+    <div className="space-y-8 max-w-4xl mx-auto pb-20">
+      {/* TARJETA PRINCIPAL: DINERO EN CAJA */}
+      <div className="bg-slate-800 p-8 rounded-2xl shadow-lg border border-slate-700 text-center relative overflow-hidden">
+        <div className="relative z-10">
+          <h3 className="text-lg font-bold text-slate-300 mb-2 uppercase tracking-wide flex items-center justify-center gap-2">
+            <Wallet size={20}/> Dinero en Caja (Ganancias)
+          </h3>
+          <p className="text-5xl font-black text-emerald-400 mb-6">Q{cashInHand.toFixed(2)}</p>
+          
+          <button 
+            onClick={() => setShowWithdrawModal(true)}
+            className="bg-white text-slate-900 px-6 py-3 rounded-full font-bold hover:bg-slate-100 transition-colors shadow-md flex items-center gap-2 mx-auto"
+          >
+            Retirar / Registrar Gasto <ArrowRight size={16} />
+          </button>
+        </div>
+        
+        {/* Background Decoration */}
+        <div className="absolute top-0 left-0 w-full h-full opacity-10 pointer-events-none">
+           <div className="absolute -top-10 -right-10 w-40 h-40 bg-emerald-500 rounded-full blur-3xl"></div>
+           <div className="absolute -bottom-10 -left-10 w-40 h-40 bg-purple-500 rounded-full blur-3xl"></div>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
         {/* Tarjeta de Andy */}
-        <div className="bg-gradient-to-br from-purple-50 to-white p-8 rounded-2xl border border-purple-100 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
-           <div className="absolute top-0 right-0 bg-purple-600 px-4 py-2 rounded-bl-xl text-white font-bold text-sm shadow-sm">
-             60% Acciones
+        <div className="bg-white p-6 rounded-2xl border border-purple-100 shadow-sm relative overflow-hidden">
+           <div className="absolute top-0 right-0 bg-purple-100 text-purple-700 px-3 py-1 rounded-bl-xl font-bold text-xs">60%</div>
+           <div className="flex items-center gap-3 mb-4">
+             <div className="bg-purple-50 p-3 rounded-full text-purple-600"><User size={24} /></div>
+             <h4 className="font-bold text-lg text-slate-800">Andy</h4>
            </div>
-           
-           <div className="flex items-center gap-4 mb-6">
-             <div className="bg-purple-100 p-4 rounded-full text-purple-600 group-hover:scale-110 transition-transform">
-               <User size={32} />
-             </div>
-             <div>
-               <h4 className="font-bold text-xl text-slate-800">Andy</h4>
-               <p className="text-xs font-medium text-purple-600 bg-purple-50 px-2 py-0.5 rounded-full inline-block mt-1">andy@aurabeauty.com</p>
-             </div>
-           </div>
-           
-           <div className="border-t border-purple-100 pt-4">
-             <p className="text-sm text-slate-500 mb-1">Participación en Ganancias</p>
-             <p className="text-3xl font-bold text-purple-700">Q{andyShare.toFixed(2)}</p>
-           </div>
+           <p className="text-sm text-slate-500">Participación Total:</p>
+           <p className="text-2xl font-bold text-purple-700">Q{andyShare.toFixed(2)}</p>
         </div>
 
         {/* Tarjeta de Dafne */}
-        <div className="bg-gradient-to-br from-pink-50 to-white p-8 rounded-2xl border border-pink-100 shadow-sm relative overflow-hidden group hover:shadow-md transition-all">
-           <div className="absolute top-0 right-0 bg-pink-600 px-4 py-2 rounded-bl-xl text-white font-bold text-sm shadow-sm">
-             40% Acciones
+        <div className="bg-white p-6 rounded-2xl border border-pink-100 shadow-sm relative overflow-hidden">
+           <div className="absolute top-0 right-0 bg-pink-100 text-pink-700 px-3 py-1 rounded-bl-xl font-bold text-xs">40%</div>
+           <div className="flex items-center gap-3 mb-4">
+             <div className="bg-pink-50 p-3 rounded-full text-pink-600"><User size={24} /></div>
+             <h4 className="font-bold text-lg text-slate-800">Dafne</h4>
            </div>
-           
-           <div className="flex items-center gap-4 mb-6">
-             <div className="bg-pink-100 p-4 rounded-full text-pink-600 group-hover:scale-110 transition-transform">
-               <User size={32} />
-             </div>
-             <div>
-               <h4 className="font-bold text-xl text-slate-800">Dafne</h4>
-               <p className="text-xs font-medium text-pink-600 bg-pink-50 px-2 py-0.5 rounded-full inline-block mt-1">Socio</p>
-             </div>
-           </div>
-           
-           <div className="border-t border-pink-100 pt-4">
-             <p className="text-sm text-slate-500 mb-1">Participación en Ganancias</p>
-             <p className="text-3xl font-bold text-pink-700">Q{dafneShare.toFixed(2)}</p>
-           </div>
+           <p className="text-sm text-slate-500">Participación Total:</p>
+           <p className="text-2xl font-bold text-pink-700">Q{dafneShare.toFixed(2)}</p>
         </div>
       </div>
-      
-      <div className="bg-slate-50 p-4 rounded-lg text-center text-xs text-slate-400">
-        * Los cálculos se basan exclusivamente en la utilidad (Precio Venta - Precio Costo) de todas las ventas registradas.
+
+      {/* Historial de Retiros */}
+      <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+        <div className="p-6 border-b border-slate-50">
+          <h3 className="font-semibold text-lg text-slate-700">Historial de Retiros y Gastos</h3>
+        </div>
+        <div className="overflow-x-auto max-h-64">
+          <table className="w-full text-left text-sm text-slate-600">
+            <thead className="bg-slate-50 text-slate-500 uppercase font-medium text-xs sticky top-0">
+              <tr>
+                <th className="px-6 py-3">Fecha</th>
+                <th className="px-6 py-3">Tipo</th>
+                <th className="px-6 py-3">Beneficiario</th>
+                <th className="px-6 py-3">Monto</th>
+                <th className="px-6 py-3 text-center">Recibo</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-50">
+              {withdrawals.length === 0 ? (
+                <tr><td colSpan="5" className="p-6 text-center text-slate-400">No hay movimientos registrados.</td></tr>
+              ) : (
+                withdrawals.map((w) => (
+                  <tr key={w.id} className="hover:bg-slate-50">
+                    <td className="px-6 py-3">{new Date(w.date).toLocaleDateString()}</td>
+                    <td className="px-6 py-3"><span className={`px-2 py-1 rounded-full text-xs font-bold ${w.type === 'Gasto Empresa' ? 'bg-orange-100 text-orange-700' : 'bg-blue-100 text-blue-700'}`}>{w.type}</span></td>
+                    <td className="px-6 py-3 font-medium">{w.beneficiary}</td>
+                    <td className="px-6 py-3 font-bold text-red-500">-Q{parseFloat(w.amount).toFixed(2)}</td>
+                    <td className="px-6 py-3 text-center">
+                      <button onClick={() => setReceiptData(w)} className="text-slate-400 hover:text-slate-600"><Printer size={16}/></button>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
+
+      {/* MODAL DE RETIRO */}
+      {showWithdrawModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6 animate-in fade-in zoom-in duration-200">
+            <h3 className="font-bold text-xl text-slate-800 mb-4">Registrar Salida de Dinero</h3>
+            
+            <form onSubmit={handleSubmitWithdrawal} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-2">Tipo de Movimiento</label>
+                <div className="flex gap-2">
+                  <button type="button" onClick={() => setWithdrawType('Pago Socio')} className={`flex-1 py-2 rounded-lg border text-sm font-medium ${withdrawType === 'Pago Socio' ? 'bg-blue-50 border-blue-200 text-blue-700' : 'border-slate-200 text-slate-500'}`}>Pago a Socio</button>
+                  <button type="button" onClick={() => setWithdrawType('Gasto Empresa')} className={`flex-1 py-2 rounded-lg border text-sm font-medium ${withdrawType === 'Gasto Empresa' ? 'bg-orange-50 border-orange-200 text-orange-700' : 'border-slate-200 text-slate-500'}`}>Gasto Empresa</button>
+                </div>
+              </div>
+
+              {withdrawType === 'Pago Socio' && (
+                <div>
+                  <label className="block text-sm font-medium text-slate-600 mb-2">¿A quién se le paga?</label>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setBeneficiary('Andy')} className={`flex-1 py-2 rounded-lg border text-sm font-medium ${beneficiary === 'Andy' ? 'bg-purple-50 border-purple-200 text-purple-700' : 'border-slate-200 text-slate-500'}`}>Andy</button>
+                    <button type="button" onClick={() => setBeneficiary('Dafne')} className={`flex-1 py-2 rounded-lg border text-sm font-medium ${beneficiary === 'Dafne' ? 'bg-pink-50 border-pink-200 text-pink-700' : 'border-slate-200 text-slate-500'}`}>Dafne</button>
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1">Monto (Q)</label>
+                <input 
+                  type="number" 
+                  step="0.01" 
+                  required
+                  className="w-full px-4 py-2 border border-slate-200 rounded-lg text-lg font-bold text-slate-800" 
+                  placeholder="0.00"
+                  value={amount}
+                  onChange={(e) => setAmount(e.target.value)}
+                />
+                <p className="text-xs text-slate-400 mt-1">Disponible en caja: Q{cashInHand.toFixed(2)}</p>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-slate-600 mb-1">Descripción / Notas</label>
+                <input 
+                  type="text" 
+                  className="w-full px-4 py-2 border border-slate-200 rounded-lg" 
+                  placeholder="Ej. Adelanto de utilidades, Pago de luz..."
+                  value={description}
+                  onChange={(e) => setDescription(e.target.value)}
+                />
+              </div>
+
+              <div className="flex gap-3 pt-4">
+                <button type="button" onClick={() => setShowWithdrawModal(false)} className="flex-1 py-3 text-slate-600 hover:bg-slate-100 rounded-xl">Cancelar</button>
+                <button type="submit" className="flex-1 py-3 bg-slate-800 text-white font-bold rounded-xl hover:bg-slate-900">Registrar</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL RECIBO DE RETIRO */}
+      {receiptData && (
+        <WithdrawalReceiptModal data={receiptData} onClose={() => setReceiptData(null)} />
+      )}
     </div>
   );
 };
