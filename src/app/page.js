@@ -172,8 +172,8 @@ export default function AuraApp() {
   // Estado para el Recibo
   const [receiptSale, setReceiptSale] = useState(null); 
 
-  // Variable auxiliar para verificar si es Andy
-  const isAndy = user?.email === 'andy@aurabeauty.com';
+  // Variable auxiliar para verificar si es Socio (Andy o Dafne)
+  const isPartner = user?.email === 'andy@aurabeauty.com' || user?.email === 'dafne@aurabeauty.com';
 
   // 1. Efecto de Autenticación
   useEffect(() => {
@@ -397,7 +397,7 @@ export default function AuraApp() {
       case 'pos':
         return <POSView products={products} cart={cart} setCart={setCart} onCheckout={handleProcessSale} showNotification={showNotification} />;
       case 'profits': 
-        return isAndy ? <ProfitDistributionView sales={sales} withdrawals={withdrawals} onAddWithdrawal={handleAddWithdrawal} onDeleteWithdrawal={handleDeleteWithdrawal} /> : <DashboardView sales={sales} products={products} onDeleteSale={handleDeleteSale} onUpdateStatus={handleUpdateSaleStatus} onViewReceipt={setReceiptSale} />;
+        return isPartner ? <ProfitDistributionView sales={sales} withdrawals={withdrawals} onAddWithdrawal={handleAddWithdrawal} onDeleteWithdrawal={handleDeleteWithdrawal} /> : <DashboardView sales={sales} products={products} onDeleteSale={handleDeleteSale} onUpdateStatus={handleUpdateSaleStatus} onViewReceipt={setReceiptSale} />;
       default:
         return <DashboardView sales={sales} products={products} onDeleteSale={handleDeleteSale} onUpdateStatus={handleUpdateSaleStatus} onViewReceipt={setReceiptSale} />;
     }
@@ -423,8 +423,8 @@ export default function AuraApp() {
           <SidebarItem icon={<ShoppingCart size={20} />} label="Punto de Venta" active={activeTab === 'pos'} onClick={() => setActiveTab('pos')} />
           <SidebarItem icon={<Package size={20} />} label="Inventario" active={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} />
           
-          {/* SECCIÓN SOLO VISIBLE PARA ANDY */}
-          {isAndy && (
+          {/* SECCIÓN SOLO VISIBLE PARA SOCIOS */}
+          {isPartner && (
             <SidebarItem icon={<PieChart size={20} />} label="Socios / Ganancias" active={activeTab === 'profits'} onClick={() => setActiveTab('profits')} />
           )}
         </nav>
@@ -482,7 +482,7 @@ export default function AuraApp() {
         <MobileNavItem icon={<ShoppingCart size={24} />} label="Vender" active={activeTab === 'pos'} onClick={() => setActiveTab('pos')} />
         <MobileNavItem icon={<Package size={24} />} label="Items" active={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} />
         
-        {isAndy && (
+        {isPartner && (
           <MobileNavItem icon={<PieChart size={24} />} label="Socios" active={activeTab === 'profits'} onClick={() => setActiveTab('profits')} />
         )}
       </nav>
@@ -494,7 +494,7 @@ export default function AuraApp() {
   );
 }
 
-// --- COMPONENTES AUXILIARES (DEFINIDOS COMO FUNCIONES PARA EVITAR ERRORES DE HOISTING) ---
+// --- COMPONENTES AUXILIARES (DEFINIDOS COMO FUNCIONES) ---
 
 function SidebarItem({ icon, label, active, onClick }) {
   return (
