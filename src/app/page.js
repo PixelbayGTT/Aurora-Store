@@ -29,7 +29,8 @@ import {
   PieChart,
   Wallet, 
   ArrowRight,
-  RefreshCcw 
+  RefreshCcw,
+  ClipboardList // Icono para la sección de Resurtir
 } from 'lucide-react';
 
 // --- Firebase Imports ---
@@ -245,6 +246,64 @@ function WithdrawalReceiptModal({ data, onClose }) {
           </button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// --- VISTA 5: POR RESURTIR (NUEVA) ---
+function RestockView({ products }) {
+  const outOfStockProducts = products.filter(p => p.stock <= 0);
+
+  return (
+    <div className="space-y-6">
+       {/* Header/Stats */}
+       <div className="bg-red-50 p-6 rounded-xl border border-red-100 flex items-center justify-between">
+          <div>
+             <h3 className="text-red-800 font-bold text-lg flex items-center gap-2">
+                <ClipboardList size={24} className="text-red-600"/> 
+                Productos Agotados
+             </h3>
+             <p className="text-red-600 text-sm mt-1">Estos productos necesitan resurtirse urgentemente.</p>
+          </div>
+          <div className="bg-white px-4 py-2 rounded-lg border border-red-200 shadow-sm">
+             <span className="text-3xl font-black text-red-500">{outOfStockProducts.length}</span>
+             <span className="text-xs text-red-400 block uppercase font-bold">Items</span>
+          </div>
+       </div>
+
+       {/* Table */}
+       <div className="bg-white rounded-xl shadow-sm border border-slate-100 overflow-hidden">
+          <div className="overflow-x-auto">
+            <table className="w-full text-left">
+               <thead className="bg-slate-50 text-slate-500 text-xs uppercase font-semibold">
+                  <tr>
+                     <th className="px-6 py-4">Producto</th>
+                     <th className="px-6 py-4">Categoría</th>
+                     <th className="px-6 py-4 text-right">Costo Unit.</th>
+                     <th className="px-6 py-4 text-center">Estado</th>
+                  </tr>
+               </thead>
+               <tbody className="divide-y divide-slate-50 text-sm">
+                  {outOfStockProducts.length === 0 ? (
+                     <tr><td colSpan="4" className="p-8 text-center text-slate-400">¡Todo en orden! No hay productos agotados.</td></tr>
+                  ) : (
+                     outOfStockProducts.map(p => (
+                        <tr key={p.id} className="hover:bg-red-50/30 transition-colors">
+                           <td className="px-6 py-4 font-medium text-slate-700">{p.name}</td>
+                           <td className="px-6 py-4 text-slate-500">{p.category}</td>
+                           <td className="px-6 py-4 text-right text-slate-600 font-mono">Q{p.cost.toFixed(2)}</td>
+                           <td className="px-6 py-4 text-center">
+                              <span className="bg-red-100 text-red-700 px-3 py-1 rounded-full text-xs font-bold inline-flex items-center gap-1">
+                                 <X size={12} strokeWidth={3} /> AGOTADO
+                              </span>
+                           </td>
+                        </tr>
+                     ))
+                  )}
+               </tbody>
+            </table>
+          </div>
+       </div>
     </div>
   );
 }
@@ -982,435 +1041,6 @@ function ProfitDistributionView({ sales, withdrawals, onAddWithdrawal, onDeleteW
 
       {receiptData && (
         <WithdrawalReceiptModal data={receiptData} onClose={() => setReceiptData(null)} />
-      )}
-    </div>
-  );
-}
-
-// --- Componente de Login (Pantalla de Bloqueo) ---
-function LoginView() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [error, setError] = useState('');
-  const [loggingIn, setLoggingIn] = useState(false);
-
-  const handleLogin = async (e) => {
-    e.preventDefault();
-    setError('');
-    setLoggingIn(true);
-    try {
-      await signInWithEmailAndPassword(auth, email, password);
-    } catch (err) {
-      console.error(err);
-      setError('Credenciales incorrectas. Intenta de nuevo.');
-      setLoggingIn(false);
-    }
-  };
-
-  return (
-    <div className="min-h-screen bg-pink-50 flex flex-col items-center justify-center p-4">
-      <div className="bg-white p-8 rounded-2xl shadow-xl w-full max-w-md border border-pink-100">
-        <div className="text-center mb-8">
-          <div className="bg-pink-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-4 text-pink-500">
-            <ShoppingBag size={32} />
-          </div>
-          <h1 className="text-2xl font-bold text-slate-800">Aura Beauty Store</h1>
-          <p className="text-slate-500 text-sm mt-1">Acceso Administrativo</p>
-        </div>
-
-        <form onSubmit={handleLogin} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Correo Electrónico</label>
-            <div className="relative">
-              <User className="absolute left-3 top-3 text-slate-400" size={18} />
-              <input 
-                type="email" 
-                required
-                className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 transition-all text-slate-900"
-                placeholder="admin@aura.com"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
-            </div>
-          </div>
-          
-          <div>
-            <label className="block text-sm font-medium text-slate-700 mb-1">Contraseña</label>
-            <div className="relative">
-              <Lock className="absolute left-3 top-3 text-slate-400" size={18} />
-              <input 
-                type="password" 
-                required
-                className="w-full pl-10 pr-4 py-3 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500 transition-all text-slate-900"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
-          </div>
-
-          {error && (
-            <div className="bg-red-50 text-red-600 text-sm p-3 rounded-lg text-center font-medium animate-pulse">
-              {error}
-            </div>
-          )}
-
-          <button 
-            type="submit" 
-            disabled={loggingIn}
-            className="w-full bg-gradient-to-r from-pink-600 to-purple-600 text-white py-3 rounded-xl font-bold shadow-lg hover:shadow-pink-200 hover:scale-[1.02] transition-all disabled:opacity-70 disabled:cursor-not-allowed"
-          >
-            {loggingIn ? 'Verificando...' : 'Iniciar Sesión'}
-          </button>
-        </form>
-        
-        <div className="mt-8 text-center">
-          <p className="text-xs text-slate-400">Sistema Privado de Gestión</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ==========================================
-// COMPONENTE PRINCIPAL (AURA APP)
-// ==========================================
-export default function AuraApp() {
-  const [user, setUser] = useState(null);
-  const [activeTab, setActiveTab] = useState('dashboard');
-  const [loading, setLoading] = useState(true);
-  
-  // Estados de Datos
-  const [products, setProducts] = useState([]);
-  const [sales, setSales] = useState([]);
-  const [withdrawals, setWithdrawals] = useState([]);
-  
-  // Estado local del Carrito
-  const [cart, setCart] = useState([]);
-  const [notification, setNotification] = useState(null);
-
-  // Estado para el Recibo
-  const [receiptSale, setReceiptSale] = useState(null); 
-
-  // Variable auxiliar para verificar si es Socio (Andy o Dafne)
-  const isPartner = user?.email === 'andy@aurabeauty.com' || user?.email === 'dafne@aurabeauty.com';
-
-  // 1. Efecto de Autenticación
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (currentUser) => {
-      // LOGICA DE SEGURIDAD: Si detectamos un usuario anónimo (sesión antigua),
-      // lo desconectamos forzosamente para pedir credenciales reales.
-      if (currentUser && currentUser.isAnonymous) {
-        await signOut(auth);
-        setUser(null);
-      } else {
-        setUser(currentUser);
-      }
-      setLoading(false);
-    });
-    return () => unsubscribe();
-  }, []);
-
-  // 2. Efecto de Datos (Productos)
-  useEffect(() => {
-    if (!user) return;
-    const productsRef = collection(db, 'artifacts', appId, 'public', 'data', 'products');
-    const unsubscribe = onSnapshot(productsRef, (snapshot) => {
-      const prods = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setProducts(prods);
-    }, (error) => {
-      console.error("Error fetching products:", error);
-      showNotification("Error al cargar productos", "error");
-    });
-    return () => unsubscribe();
-  }, [user]);
-
-  // 3. Efecto de Datos (Ventas)
-  useEffect(() => {
-    if (!user) return;
-    const salesRef = collection(db, 'artifacts', appId, 'public', 'data', 'sales');
-    const unsubscribe = onSnapshot(salesRef, (snapshot) => {
-      const salesData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      salesData.sort((a, b) => new Date(b.date) - new Date(a.date)); 
-      setSales(salesData);
-    }, (error) => {
-      console.error("Error fetching sales:", error);
-    });
-    return () => unsubscribe();
-  }, [user]);
-
-  // 4. Efecto de Datos (Retiros/Gastos)
-  useEffect(() => {
-    if (!user) return;
-    const withdrawalsRef = collection(db, 'artifacts', appId, 'public', 'data', 'withdrawals');
-    const unsubscribe = onSnapshot(withdrawalsRef, (snapshot) => {
-      const wData = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      wData.sort((a, b) => new Date(b.date) - new Date(a.date)); 
-      setWithdrawals(wData);
-    }, (error) => {
-      console.error("Error fetching withdrawals:", error);
-    });
-    return () => unsubscribe();
-  }, [user]);
-
-  const handleLogout = async () => {
-    try {
-      await signOut(auth);
-    } catch (error) {
-      console.error("Error signing out:", error);
-    }
-  };
-
-  const showNotification = (message, type = 'success') => {
-    setNotification({ message, type });
-    setTimeout(() => setNotification(null), 3000);
-  };
-
-  // --- Funciones de Base de Datos ---
-
-  const handleAddProduct = async (productData) => {
-    if (!user) return;
-    try {
-      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'products'), productData);
-      showNotification("Producto guardado correctamente");
-    } catch (error) {
-      console.error("Error adding product:", error);
-      showNotification("Error al guardar producto", "error");
-    }
-  };
-
-  const handleUpdateProduct = async (id, productData) => {
-    if (!user) return;
-    try {
-      const docRef = doc(db, 'artifacts', appId, 'public', 'data', 'products', id);
-      await updateDoc(docRef, productData);
-      showNotification("Producto actualizado");
-    } catch (error) {
-      console.error("Error updating product:", error);
-      showNotification("Error al actualizar", "error");
-    }
-  };
-
-  const handleDeleteProduct = async (id) => {
-    if (!user) return;
-    try {
-      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'products', id));
-      showNotification("Producto eliminado");
-    } catch (error) {
-      console.error("Error deleting product:", error);
-    }
-  };
-
-  const handleUpdateSaleStatus = async (saleId, newStatus) => {
-    if (!user) return;
-    try {
-      const saleRef = doc(db, 'artifacts', appId, 'public', 'data', 'sales', saleId);
-      await updateDoc(saleRef, { status: newStatus });
-      showNotification(`Estado actualizado a: ${newStatus}`);
-    } catch (error) {
-      console.error("Error updating sale status:", error);
-      showNotification("Error al cambiar estado", "error");
-    }
-  };
-
-  const handleProcessSale = async (cartItems, total, totalProfit, customerName, status = 'Pagado') => {
-    if (!user) return;
-    try {
-      const batch = writeBatch(db);
-      const newSaleId = doc(collection(db, 'artifacts', appId, 'public', 'data', 'sales')).id;
-      const saleRef = doc(db, 'artifacts', appId, 'public', 'data', 'sales', newSaleId);
-      
-      const saleData = {
-        id: newSaleId,
-        date: new Date().toISOString(),
-        items: cartItems,
-        total: total,
-        totalProfit: totalProfit,
-        customerName: customerName || "Cliente Casual",
-        status: status
-      };
-
-      batch.set(saleRef, saleData);
-
-      cartItems.forEach(item => {
-        const productRef = doc(db, 'artifacts', appId, 'public', 'data', 'products', item.id);
-        batch.update(productRef, { stock: increment(-item.quantity) });
-      });
-
-      await batch.commit();
-      setCart([]);
-      setReceiptSale(saleData); 
-      showNotification(`Venta registrada exitosamente.`);
-    } catch (error) {
-      console.error("Error processing sale:", error);
-      showNotification("Error al procesar la venta", "error");
-    }
-  };
-
-  const handleDeleteSale = async (sale) => {
-    if (!user) return;
-    if (!window.confirm(`¿Estás seguro de eliminar la venta de ${sale.customerName}? El stock será devuelto al inventario.`)) return;
-
-    try {
-      const batch = writeBatch(db);
-      sale.items.forEach(item => {
-        const productRef = doc(db, 'artifacts', appId, 'public', 'data', 'products', item.id);
-        batch.update(productRef, { stock: increment(item.quantity) });
-      });
-      const saleRef = doc(db, 'artifacts', appId, 'public', 'data', 'sales', sale.id);
-      batch.delete(saleRef);
-      await batch.commit();
-      showNotification("Venta eliminada y stock restaurado correctamente.");
-    } catch (error) {
-      console.error("Error deleting sale:", error);
-      showNotification("Error al eliminar", "error");
-    }
-  };
-
-  const handleAddWithdrawal = async (withdrawalData) => {
-    if (!user) return;
-    try {
-      await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'withdrawals'), {
-        ...withdrawalData,
-        date: new Date().toISOString()
-      });
-      showNotification("Retiro registrado correctamente");
-    } catch (error) {
-      console.error("Error adding withdrawal:", error);
-      showNotification("Error al registrar retiro", "error");
-    }
-  };
-
-  const handleDeleteWithdrawal = async (id) => {
-    if (!user) return;
-    if (!window.confirm("¿Eliminar este registro? Si fue un pago a socio, se sumará de nuevo a su saldo pendiente.")) return;
-    
-    try {
-      await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', 'withdrawals', id));
-      showNotification("Registro eliminado y saldo restaurado");
-    } catch (error) {
-      console.error("Error deleting withdrawal:", error);
-      showNotification("Error al eliminar", "error");
-    }
-  };
-
-  // --- LÓGICA DE RENDERIZADO PRINCIPAL ---
-  if (loading) {
-    return (
-      <div className="flex flex-col items-center justify-center h-screen text-pink-400 bg-pink-50">
-        <Loader className="animate-spin mb-4" size={40} />
-        <p className="text-slate-600 font-medium">Cargando Aura...</p>
-      </div>
-    );
-  }
-
-  // SI NO HAY USUARIO, MOSTRAR LOGIN
-  if (!user) {
-    return <LoginView />;
-  }
-
-  // SI HAY USUARIO, MOSTRAR APP
-  const renderContent = () => {
-    switch (activeTab) {
-      case 'dashboard':
-        return <DashboardView sales={sales} products={products} onDeleteSale={handleDeleteSale} onUpdateStatus={handleUpdateSaleStatus} onViewReceipt={setReceiptSale} />;
-      case 'inventory':
-        return <InventoryView products={products} onAdd={handleAddProduct} onUpdate={handleUpdateProduct} onDelete={handleDeleteProduct} showNotification={showNotification} />;
-      case 'pos':
-        return <POSView products={products} cart={cart} setCart={setCart} onCheckout={handleProcessSale} showNotification={showNotification} />;
-      case 'profits': 
-        return isPartner ? <ProfitDistributionView sales={sales} withdrawals={withdrawals} onAddWithdrawal={handleAddWithdrawal} onDeleteWithdrawal={handleDeleteWithdrawal} /> : <DashboardView sales={sales} products={products} onDeleteSale={handleDeleteSale} onUpdateStatus={handleUpdateSaleStatus} onViewReceipt={setReceiptSale} />;
-      default:
-        return <DashboardView sales={sales} products={products} onDeleteSale={handleDeleteSale} onUpdateStatus={handleUpdateSaleStatus} onViewReceipt={setReceiptSale} />;
-    }
-  };
-
-  return (
-    <div className="flex h-screen bg-gray-50 font-sans text-slate-800 overflow-hidden">
-      {/* Sidebar (Desktop) */}
-      <aside className="hidden md:flex w-64 bg-white border-r border-pink-100 flex-col shadow-sm">
-        <div className="p-6 flex items-center justify-center border-b border-pink-50">
-          <div className="flex items-center gap-2">
-            <div className="bg-pink-500 text-white p-2 rounded-lg">
-              <ShoppingBag size={24} />
-            </div>
-            <h1 className="text-2xl font-bold bg-gradient-to-r from-pink-600 to-purple-600 bg-clip-text text-transparent">
-              Aura
-            </h1>
-          </div>
-        </div>
-
-        <nav className="flex-1 p-4 space-y-2">
-          <SidebarItem icon={<LayoutDashboard size={20} />} label="Panel General" active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
-          <SidebarItem icon={<ShoppingCart size={20} />} label="Punto de Venta" active={activeTab === 'pos'} onClick={() => setActiveTab('pos')} />
-          <SidebarItem icon={<Package size={20} />} label="Inventario" active={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} />
-          
-          {/* SECCIÓN SOLO VISIBLE PARA SOCIOS */}
-          {isPartner && (
-            <SidebarItem icon={<PieChart size={20} />} label="Socios / Ganancias" active={activeTab === 'profits'} onClick={() => setActiveTab('profits')} />
-          )}
-        </nav>
-
-        <div className="p-4 border-t border-pink-50">
-           <button 
-             onClick={handleLogout}
-             className="flex items-center gap-2 w-full px-4 py-2 text-sm font-medium text-slate-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-           >
-              <LogOut size={16} /> Cerrar Sesión
-           </button>
-           <p className="text-xs text-slate-300 text-center mt-4">Aura Beauty Store © 2025</p>
-        </div>
-      </aside>
-
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col h-full overflow-hidden">
-        <header className="bg-white p-4 md:p-6 border-b border-pink-50 shadow-sm flex justify-between items-center z-10 shrink-0">
-          <div className="flex items-center gap-3">
-             <div className="md:hidden bg-pink-500 text-white p-1.5 rounded-lg">
-                <ShoppingBag size={20} />
-             </div>
-             <h2 className="text-lg md:text-xl font-semibold text-slate-700 truncate">
-              {activeTab === 'dashboard' && 'Resumen'}
-              {activeTab === 'inventory' && 'Inventario'}
-              {activeTab === 'pos' && 'Caja'}
-              {activeTab === 'profits' && 'Distribución de Socios'}
-            </h2>
-          </div>
-          
-          <div className="flex items-center gap-3">
-             <span className="hidden md:inline text-sm font-medium text-slate-500">{user.email}</span>
-             <div className="h-8 w-8 rounded-full bg-pink-100 border border-pink-200 flex items-center justify-center text-pink-500 font-bold">
-                {user.email ? user.email[0].toUpperCase() : 'A'}
-             </div>
-             <button onClick={handleLogout} className="md:hidden p-2 text-slate-400 hover:text-red-500">
-                <LogOut size={20} />
-             </button>
-          </div>
-        </header>
-
-        <div className="flex-1 overflow-y-auto p-4 md:p-8 pb-24 md:pb-8">
-          {notification && (
-            <div className={`fixed top-4 right-4 px-6 py-3 rounded-lg shadow-lg z-50 animate-bounce text-white ${notification.type === 'error' ? 'bg-red-500' : 'bg-emerald-500'}`}>
-              {notification.message}
-            </div>
-          )}
-          {renderContent()}
-        </div>
-      </main>
-
-      {/* Mobile Bottom Navigation */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 flex justify-around p-2 pb-safe z-40 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)]">
-        <MobileNavItem icon={<LayoutDashboard size={24} />} label="Panel" active={activeTab === 'dashboard'} onClick={() => setActiveTab('dashboard')} />
-        <MobileNavItem icon={<ShoppingCart size={24} />} label="Vender" active={activeTab === 'pos'} onClick={() => setActiveTab('pos')} />
-        <MobileNavItem icon={<Package size={24} />} label="Items" active={activeTab === 'inventory'} onClick={() => setActiveTab('inventory')} />
-        
-        {isPartner && (
-          <MobileNavItem icon={<PieChart size={24} />} label="Socios" active={activeTab === 'profits'} onClick={() => setActiveTab('profits')} />
-        )}
-      </nav>
-
-      {receiptSale && (
-        <ReceiptModal sale={receiptSale} onClose={() => setReceiptSale(null)} />
       )}
     </div>
   );
