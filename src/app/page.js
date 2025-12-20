@@ -310,8 +310,17 @@ function RestockView({ products }) {
 function DashboardView({ sales, products, onDeleteSale, onUpdateStatus, onViewReceipt }) {
   const [selectedSale, setSelectedSale] = useState(null);
 
-  const totalSales = sales.reduce((acc, sale) => acc + sale.total, 0);
-  const totalProfit = sales.reduce((acc, sale) => acc + sale.totalProfit, 0);
+  // FILTRADO DE VENTAS: Separar lo cobrado de lo pendiente
+  const completedSales = sales.filter(s => !s.status || s.status === 'Pagado' || s.status === 'Entregado');
+  const pendingSales = sales.filter(s => s.status === 'Pendiente');
+
+  // CÁLCULOS (Basados solo en ventas completadas para coincidir con Caja)
+  const totalSales = completedSales.reduce((acc, sale) => acc + sale.total, 0);
+  const totalProfit = completedSales.reduce((acc, sale) => acc + sale.totalProfit, 0);
+  
+  // Cálculo de lo pendiente (Dinero en la calle)
+  const totalPending = pendingSales.reduce((acc, sale) => acc + sale.total, 0);
+
   const totalStockValue = products.reduce((acc, prod) => acc + (prod.cost * prod.stock), 0);
   const lowStockCount = products.filter(p => p.stock < 5).length;
 
@@ -349,9 +358,11 @@ function DashboardView({ sales, products, onDeleteSale, onUpdateStatus, onViewRe
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4 md:gap-6">
-        <StatCard title="Ventas Totales" value={`Q${totalSales.toFixed(2)}`} icon={<DollarSign className="text-pink-500" />} color="bg-pink-50" />
+        {/* Ahora muestra solo lo cobrado real */}
+        <StatCard title="Ventas Cobradas" value={`Q${totalSales.toFixed(2)}`} icon={<DollarSign className="text-pink-500" />} color="bg-pink-50" />
         <StatCard title="Ganancia Neta" value={`Q${totalProfit.toFixed(2)}`} icon={<TrendingUp className="text-emerald-500" />} color="bg-emerald-50" />
-        <StatCard title="Valor Inventario" value={`Q${totalStockValue.toFixed(2)}`} icon={<Package className="text-purple-500" />} color="bg-purple-50" />
+        {/* Nueva tarjeta para lo pendiente */}
+        <StatCard title="Por Cobrar" value={`Q${totalPending.toFixed(2)}`} icon={<Clock className="text-amber-500" />} color="bg-amber-50" warning={totalPending > 0} />
         <StatCard title="Stock Bajo" value={lowStockCount} icon={<Package className="text-orange-500" />} color="bg-orange-50" warning={lowStockCount > 0} />
       </div>
 
